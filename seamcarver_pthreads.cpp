@@ -219,14 +219,15 @@ void *identifySeams(void *arguments) {
     int start_row = data -> start_row;
     int stop_row = data -> stop_row;
 
-    for (int i = start_row; i < num_rows; i++)
+    for (int i = start_row; i < stop_row; i++)
 		distTo[i] = new double[num_cols];
 
 
-	for (int i = 0; i < num_rows; i++)
+	for (int i = start_row; i < stop_row; i++)
 		edgeTo[i] = new int[num_cols];
+
 	
-        for (int row = 0; row < num_rows; row++) {
+        for (int row = start_row; row < stop_row; row++) {
             for (int col = 0; col < num_cols; col++) {
                 if (row == 0)
                     distTo[row][col] = BASE_ENERGY;
@@ -235,14 +236,16 @@ void *identifySeams(void *arguments) {
             }
        }
 
-	mtx.lock();
-	 for (int row = 0; row < num_rows - 1; row++) {
+	for (int k = 1; k < stop_row-1; k ++){
+	 for (int row = 0; row < stop_row-1; row++) {
             for (int col = 0; col < num_cols; col++) {
                 relax(row, col, edgeTo, distTo, num_cols);
             }
+	}
+}
 
-        }
-	mtx.unlock();      
+        
+
 }
 
 
@@ -467,6 +470,7 @@ int main(int argc, char **argv){
             		pthread_join(threads[i], NULL);
        		}
 
+
 		cout<<"Removing horizontal seams"<<endl;
 		for (int i = 0; i < num_threads; i++) {
 			usleep(1000);
@@ -495,7 +499,4 @@ int main(int argc, char **argv){
 	printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
 	return 0;
 }
-
-	
-
 
