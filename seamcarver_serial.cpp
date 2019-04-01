@@ -4,20 +4,29 @@
 #include "liquidrescale.h"
 #include <math.h>
 #include <limits>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <math.h>
+#include <string.h>
+#include <unistd.h>
 #include <sys/time.h>
+
 using namespace std;
 pngwriter pngwrt(1,1,0,"out.png");
 int BASE_ENERGY = 1000;
+int ROWS_PER_THREAD = 32;
 int width = 0;
 int height = 0;
 gfloat rigidity = 0;
 gint max_step = 1;
+int channels = 3;
 double** energyArray;
 guchar* seams;
+guchar* buffer;
 int* verticalSeams;
 double** distTo;
 int** edgeTo;
-guchar* buffer;
 
 /*Copied from the liblqr example
  convert the image in the right format */
@@ -25,6 +34,7 @@ guchar * rgb_buffer_from_image(pngwriter *png)
 {
     gint x, y, k, channels;
     gint w, h;
+    guchar *buffer;
 
     /* get info from the image */
     w = png->getwidth();
@@ -32,7 +42,7 @@ guchar * rgb_buffer_from_image(pngwriter *png)
     channels = 3;                       // we assume an RGB image here 
 
     /* allocate memory to store w * h * channels unsigned chars */
-    guchar* buffer = g_try_new(guchar, channels * w * h);
+    buffer = g_try_new(guchar, channels * w * h);
     g_assert(buffer != NULL);
 
     /* start iteration (always y first, then x, then colours) */
@@ -52,6 +62,8 @@ guchar * rgb_buffer_from_image(pngwriter *png)
 
 
 double computeEnergy(int x, int y, guchar* buffer){
+	 if (x == 0 || y == 0 || (x == width - 1) || (y == height- 1))
+            return BASE_ENERGY;
 
 	//Declare values for the RGB top, bottom, left and right neighbours
 	double top_RB, top_GB, top_BB = 0.0;
@@ -127,21 +139,18 @@ void generateEnergyMatrix(int width, int height, char* orientation){
             if (orientation[0] == 'v')
                 energyArray[row][column] = computeEnergy(column, row, buffer);
             else
-                energyArray[row][column] = computeEnergy(row, column, buffer);	
-
-
+                energyArray[row][column] = computeEnergy(row, column, buffer);
         }
     }
 
 
 }
 
-
-
 /*Declare a relax function to optimize the computation of a 
 	shortest path energy values*/
 
 void relax(int row, int col, int** edgeTo, double** distTo, int width) {
+	int relax = 0;
         int nextRow = row + 1;
         for (int i = -1; i <= 1; i++) {
             int nextCol = col + i;
@@ -150,27 +159,28 @@ void relax(int row, int col, int** edgeTo, double** distTo, int width) {
             if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]) {
                 distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
                 edgeTo[nextRow][nextCol] = i;
+
             }
         }
     }
 
 int* backTrack(int** edgeTo, double** distTo, int height, int width){
-    // Backtrack from the last row to get a shortest path
-    int* seams = new int[height];
-    int minCol = 0;
-    double minDist = std::numeric_limits<double>::infinity();
-    for (int col = 0; col < width; col++) {
-        if (distTo[height - 1][col] < minDist) {
-            minDist = distTo[height - 1][col];
-            minCol = col;
+// Backtrack from the last row to get a shortest path
+	int* seams = new int[height];
+        int minCol = 0;
+        double minDist = std::numeric_limits<double>::infinity();
+        for (int col = 0; col < width; col++) {
+            if (distTo[height - 1][col] < minDist) {
+                minDist = distTo[height - 1][col];
+                minCol = col;
+            }
         }
-    }
-    for (int row = height - 1; row >= 0; row--) {
-        verticalSeams[row] = minCol;
-        minCol = minCol - edgeTo[row][minCol];
-    }
-    return verticalSeams;
-    
+	 for (int row = height - 1; row >= 0; row--) {
+            verticalSeams[row] = minCol;
+            minCol = minCol - edgeTo[row][minCol];
+        }
+	return verticalSeams;
+	
 }
 
 //A Transpose Matrix that makes findVerticalSeams re-usable
@@ -187,7 +197,6 @@ int* backTrack(int** edgeTo, double** distTo, int height, int width){
 		}
 	}
 		return transposedRGBuffer;
-
 }
 
 //TO BE PARALLELIZED
@@ -221,7 +230,8 @@ int * identifySeams( int width, int height){
         }
 }
 
-//TO BE PARALLELIZED
+
+
 //Carve out the vertical seams
 guchar* carveVertically(int* vertical_seams, guchar* buffer, int width, int height){
 	guchar* carved_imageV;
@@ -257,11 +267,11 @@ guchar* carveVertically(int* vertical_seams, guchar* buffer, int width, int heig
 
 LqrRetVal printSeams(LqrCarver *carver, pngwriter *pngwrt){
 
-	 gint x, y;
-    	 guchar *rgb;
-	 gdouble red, green, blue;
+    gint x, y;
+    guchar *rgb;
+    gdouble red, green, blue;
 
-	 lqr_carver_scan_reset(carver);
+    lqr_carver_scan_reset(carver);
 
     /* readout (no need to init rgb) */
     while (lqr_carver_scan(carver, &x, &y, &rgb)) {
@@ -270,14 +280,12 @@ LqrRetVal printSeams(LqrCarver *carver, pngwriter *pngwrt){
         green = (gdouble) rgb[1] / 255;
         blue = (gdouble) rgb[2] / 255;
 
-        /* plot (pngwriter's coordinates start from 1,1) */
-	if (red != 0 && green != 0 && blue !=0)
-       		 pngwrt->plot(x + 1, y + 1, red, green, blue);
-	else{
-		       pngwrt->plot(x + 1, y + 1, 1.0, 0.0, 0.0);
+	if(!rgb[0] && !rgb[1] && !rgb[2])
+		 pngwrt->plot(x + 1, y + 1, 1.0, 0.0, 0.0);
+	else 
+		 pngwrt->plot(x + 1, y + 1, red, green, blue);
 			
 }
-	}
 	    return LQR_OK;
 }
 
@@ -325,52 +333,60 @@ double timestamp()
     return ( tval.tv_sec + (tval.tv_usec / 1000000.0) );
 }
 
-
 int main(int argc, char **argv){
 	char * original_img = argv[1]; 
 	char* orientation = argv[2];
-	double begin, end;
-	begin = timestamp();
+	
 	pngwrt.readfromfile(original_img);
 	width = pngwrt.getwidth();
 	height = pngwrt.getheight();
-	
+
 	cout<<"Width: "<<width<<" Height: "<<height<<endl;
+	double begin, end;
+
+	begin = timestamp();
+	
+	int size = 3 * width * height;
+    	buffer = g_try_new(guchar,size);
 	buffer = rgb_buffer_from_image(&pngwrt);
+	
+    	g_assert(buffer != NULL);
+	
+
 	LqrCarver *carver;
 	LqrCarver *carved_seams;
 	//Check the orientation to determine how to carve
 	if(orientation[0] == 'v'){
-		cout<<"Removing vertical seams"<<endl;
+	 	verticalSeams = new int[height];
 		distTo = new double*[height];
 		edgeTo = new int*[height];
-		verticalSeams = new int[height];
-		 energyArray = new double*[height];
-      		  for (int i = 0; i < height; i++)
-         	   energyArray[i] = new double[width];
-		generateEnergyMatrix( width, height, orientation);
+		//Declare a dynamic 2D array to hold the energy values for all pixels
+		energyArray = new double*[height];
+		for (int i = 0; i < height; i++)
+		energyArray[i] = new double[width];
+		generateEnergyMatrix(width, height, orientation);
+		cout<<"Removing vertical seams"<<endl;
 		identifySeams(width, height);
+	
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
 		guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
 		carved_seams = lqr_carver_new(seams, width, height, 3);
-		}
+	}
 	else{
+		verticalSeams = new int[width];
 		distTo = new double*[width];
 		edgeTo = new int*[width];
-		verticalSeams = new int[width];
-	  	 energyArray = new double*[width];
-		for (int i = 0; i < width; i++)
-		    energyArray[i] = new double[height];
-		guchar* transBuffer = transposeRGBuffer(buffer, width, height);
-
 		//Declare a dynamic 2D array to hold the energy values for all pixels
+		energyArray = new double*[width];
+		for (int i = 0; i < width; i++)
+			energyArray[i] = new double[height];
 		generateEnergyMatrix(height, width, orientation);
-				cout<<"Hello There"<<endl;
-						
-		identifySeams(height, width);
+
 		cout<<"Removing horizontal seams"<<endl;
+		identifySeams(height, width);
 		int* h_seams =  backTrack(edgeTo, distTo, width, height);
+		guchar* transBuffer = transposeRGBuffer(buffer, width, height);
 		guchar* carved_imageH = carveVertically(h_seams, transBuffer, height, width);
 		carver = lqr_carver_new(transposeRGBuffer(carved_imageH, height,width), width, height, 3);
 		carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
@@ -384,11 +400,6 @@ int main(int argc, char **argv){
 	pngwrt.close();
 	end = timestamp();
 	printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
-
 	return 0;
 }
-
-	
-
-
 
