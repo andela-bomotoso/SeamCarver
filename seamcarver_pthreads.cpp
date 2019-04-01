@@ -165,6 +165,7 @@ void *generateEnergyMatrix(void *arguments) {
 	shortest path energy values*/
 
 void relax(int row, int col, int** edgeTo, double** distTo, int width) {
+	int relax = 0;
         int nextRow = row + 1;
         for (int i = -1; i <= 1; i++) {
             int nextCol = col + i;
@@ -173,6 +174,7 @@ void relax(int row, int col, int** edgeTo, double** distTo, int width) {
             if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]) {
                 distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
                 edgeTo[nextRow][nextCol] = i;
+
             }
         }
     }
@@ -236,16 +238,12 @@ void *identifySeams(void *arguments) {
             }
        }
 
-	for (int k = 1; k < stop_row-1; k ++){
 	 for (int row = 0; row < stop_row-1; row++) {
             for (int col = 0; col < num_cols; col++) {
-                relax(row, col, edgeTo, distTo, num_cols);
+               relax(row, col, edgeTo, distTo, num_cols);
+		
             }
 	}
-}
-
-        
-
 }
 
 
