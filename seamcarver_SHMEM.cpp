@@ -12,8 +12,9 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/time.h>
-#include <mutex>   
-#include <atomic>         // std::atomic
+#include <mutex>         
+pthread_barrier_t barr;
+
 
 
 using namespace std;
@@ -32,11 +33,6 @@ guchar* buffer;
 int* verticalSeams;
 double** distTo;
 int** edgeTo;
-pthread_barrier_t barr;
-int  row_per_thread;
-
-int* paths;
-
 
 
 struct ThreadData {
@@ -168,7 +164,7 @@ void *generateEnergyMatrix(void *arguments) {
 /*Declare a relax function to optimize the computation of a 
 	shortest path energy values*/
 
-void relax1(int row, int col, int** edgeTo, double** distTo, int width) {
+void relax(int row, int col, int** edgeTo, double** distTo, int width) {
 	int relax = 0;
         int nextRow = row + 1;
         for (int i = -1; i <= 1; i++) {
@@ -179,25 +175,6 @@ void relax1(int row, int col, int** edgeTo, double** distTo, int width) {
                 distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
                 edgeTo[nextRow][nextCol] = i;
 
-            }
-        }
-    }
-
-int relax(int row, int col, int** edgeTo, double** distTo, int width) {
-	int relax = 0;
-        int nextRow = row + 1;
-        for (int i = -1; i <= 1; i++) {
-            int nextCol = col + i;
-            if (nextCol < 0 || nextCol >= width)
-                continue;
-            if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]) {
-                distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
-                edgeTo[nextRow][nextCol] = i;
-		/* WORK IN PROGRESS
-		double tmp = distTo[row][col] + energyArray[nextRow][nextCol];
-		std::atomic_compare_exchange_weak (distTo[nextRow][nextCol], distTo[nextRow][nextCol], tmp);
-		paths[row] = nextCol;*/
-		relax = 1;
             }
         }
     }
@@ -243,7 +220,6 @@ void *identifySeams(void *arguments) {
     int num_cols = data -> num_cols;
     int start_row = data -> start_row;
     int stop_row = data -> stop_row;
-    int rlx = 0;
 
     for (int i = start_row; i < stop_row; i++)
 		distTo[i] = new double[num_cols];
@@ -261,17 +237,12 @@ void *identifySeams(void *arguments) {
                     distTo[row][col] = std::numeric_limits<double>::infinity();	
             }
        }
-	for (int k = 1; k < num_rows; k++){
+
 	 for (int row = 0; row < stop_row-1; row++) {
             for (int col = 0; col < num_cols; col++) {
-               rlx = relax(row, col, edgeTo, distTo, num_cols);
-            }
-	}
-	    pthread_barrier_wait(&barr);
-	   if (rlx = 0)  //No relax has taken place
-		break;
+               relax(row, col, edgeTo, distTo, num_cols);
 		
-
+            }
 	}
 }
 
@@ -394,7 +365,7 @@ int main(int argc, char **argv){
 	
 	pthread_t threads[num_threads];
 	struct ThreadData data[num_threads];
-    	row_per_thread = (height + num_threads - 1)/num_threads;
+    	int  row_per_thread = (height + num_threads - 1)/num_threads;
     
     	//divide the work among the available threads
     	for(int i = 0; i < num_threads; i++)    {
@@ -433,7 +404,6 @@ int main(int argc, char **argv){
 	//Check the orientation to determine how to carve
 	if(orientation[0] == 'v'){
 	 	verticalSeams = new int[height];
-		paths = new int[height];
 		distTo = new double*[height];
 		edgeTo = new int*[height];
 		//Declare a dynamic 2D array to hold the energy values for all pixels
@@ -455,8 +425,6 @@ int main(int argc, char **argv){
         	for (int i = 0; i < num_threads; i++) {
             		pthread_join(threads[i], NULL);
        		}
-		//for (int i = 0; i < height; i++)
-			//cout<<paths[i]<<endl;
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
 		guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
@@ -464,7 +432,6 @@ int main(int argc, char **argv){
 	}
 	else{
 		verticalSeams = new int[width];
-		paths = new int[width];
 		distTo = new double*[width];
 		edgeTo = new int*[width];
 		//Declare a dynamic 2D array to hold the energy values for all pixels
@@ -512,9 +479,7 @@ int main(int argc, char **argv){
         	for (int i = 0; i < num_threads; i++) {
             		pthread_join(threads[i], NULL);
        		}
-		
 		//identifySeams(height, width);
-		cout<<"hELLO"<<endl;
 		int* h_seams =  backTrack(edgeTo, distTo, width, height);
 		guchar* transBuffer = transposeRGBuffer(buffer, width, height);
 		guchar* carved_imageH = carveVertically(h_seams, transBuffer, height, width);
