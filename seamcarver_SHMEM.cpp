@@ -12,13 +12,13 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/time.h>
-#include <mutex>         
+#include <atomic>
+        
 pthread_barrier_t barr;
 
 
 
 using namespace std;
-std::mutex mtx;
 pngwriter pngwrt(1,1,0,"out.png");
 int BASE_ENERGY = 1000;
 int ROWS_PER_THREAD = 32;
@@ -31,6 +31,7 @@ double** energyArray;
 guchar* seams;
 guchar* buffer;
 int* verticalSeams;
+int* paths;
 double** distTo;
 int** edgeTo;
 
@@ -165,15 +166,22 @@ void *generateEnergyMatrix(void *arguments) {
 	shortest path energy values*/
 
 void relax(int row, int col, int** edgeTo, double** distTo, int width) {
-	int relax = 0;
+
         int nextRow = row + 1;
         for (int i = -1; i <= 1; i++) {
             int nextCol = col + i;
             if (nextCol < 0 || nextCol >= width)
                 continue;
+
             if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]) {
+		//This will be replaced with Atomic swap operation
                 distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
                 edgeTo[nextRow][nextCol] = i;
+
+		//WORK IN PROGRESS - 
+		//double tmp = distTo[row][col] + energyArray[nextRow][nextCol];
+		//std::atomic_compare_exchange_weak (distTo[nextRow][nextCol], distTo[nextRow][nextCol], tmp);
+		
 
             }
         }
@@ -220,30 +228,24 @@ void *identifySeams(void *arguments) {
     int num_cols = data -> num_cols;
     int start_row = data -> start_row;
     int stop_row = data -> stop_row;
-
-    for (int i = start_row; i < stop_row; i++)
-		distTo[i] = new double[num_cols];
-
-
-	for (int i = start_row; i < stop_row; i++)
-		edgeTo[i] = new int[num_cols];
-
-	
-        for (int row = start_row; row < stop_row; row++) {
+	for (int k = 0; k < num_rows-1; k++){
+	 for (int row = 0; row < stop_row-1; row++) {
             for (int col = 0; col < num_cols; col++) {
+               relax(row, col, edgeTo, distTo, num_cols);
+            }
+	}
+}
+}
+
+void initializeDistances(int width, int height)	{
+	     for (int row = 0; row < height; row++) {
+            for (int col = 0; col < width; col++) {
                 if (row == 0)
                     distTo[row][col] = BASE_ENERGY;
                 else
                     distTo[row][col] = std::numeric_limits<double>::infinity();	
             }
        }
-
-	 for (int row = 0; row < stop_row-1; row++) {
-            for (int col = 0; col < num_cols; col++) {
-               relax(row, col, edgeTo, distTo, num_cols);
-		
-            }
-	}
 }
 
 
@@ -404,18 +406,27 @@ int main(int argc, char **argv){
 	//Check the orientation to determine how to carve
 	if(orientation[0] == 'v'){
 	 	verticalSeams = new int[height];
+		paths = new int[height];
 		distTo = new double*[height];
 		edgeTo = new int*[height];
 		//Declare a dynamic 2D array to hold the energy values for all pixels
 		energyArray = new double*[height];
 		for (int i = 0; i < height; i++)
 		energyArray[i] = new double[width];
+		
+		for (int i = 0; i < height; i++)
+		distTo[i] = new double[width];
+
+		for (int i = 0; i < height; i++)
+		edgeTo[i] = new int[width];
+
 		for (int i = 0; i < num_threads; i++) {
            		pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
         	}
         	for (int i = 0; i < num_threads; i++) {
             		pthread_join(threads[i], NULL);
        		}
+		initializeDistances(width, height);
 		cout<<"Removing vertical seams"<<endl;
 		//identifySeams(width, height);
 		for (int i = 0; i < num_threads; i++) {
@@ -432,12 +443,17 @@ int main(int argc, char **argv){
 	}
 	else{
 		verticalSeams = new int[width];
+		paths =  new int[width];
 		distTo = new double*[width];
 		edgeTo = new int*[width];
 		//Declare a dynamic 2D array to hold the energy values for all pixels
 		energyArray = new double*[width];
 		for (int i = 0; i < width; i++)
 			energyArray[i] = new double[height];
+		for (int i = 0; i < width; i++)
+			distTo[i] = new double[height];
+		for (int i = 0; i < width; i++)
+			edgeTo[i] = new int[height];
 		//A thread should the processing of the image divided into 50 chunks of height
 		num_threads = width/ROWS_PER_THREAD;
 		pthread_t threads[num_threads];
@@ -467,13 +483,11 @@ int main(int argc, char **argv){
         	for (int i = 0; i < num_threads; i++) {
             		pthread_join(threads[i], NULL);
        		}
-
-
+		initializeDistances(height, width);
 		cout<<"Removing horizontal seams"<<endl;
 		for (int i = 0; i < num_threads; i++) {
 			usleep(1000);
            		pthread_create(&threads[i], NULL, &identifySeams, (void*)&data[i]);
-
 
         	}
         	for (int i = 0; i < num_threads; i++) {
