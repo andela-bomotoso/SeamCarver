@@ -19,20 +19,20 @@ pthread_barrier_t barr;
 
 
 using namespace std;
-pngwriter pngwrt(1,1,0,"out.png");
+pngwriter pngwrt(1,1,0,"out_pthreads.png");
 int BASE_ENERGY = 1000;
-int ROWS_PER_THREAD = 32;
+int ROWS_PER_THREAD = 64;
 int width = 0;
 int height = 0;
 gfloat rigidity = 0;
 gint max_step = 1;
 int channels = 3;
-double** energyArray;
+int** energyArray;
 guchar* seams;
 guchar* buffer;
 int* verticalSeams;
 int* paths;
-double** distTo;
+int** distTo;
 int** edgeTo;
 
 
@@ -66,7 +66,7 @@ void *generateRGBuffer(void *arguments) {
     }
 }
 
-double computeEnergy(int x, int y, guchar* buffer){
+int computeEnergy(int x, int y, guchar* buffer){
 	 if (x == 0 || y == 0 || (x == width - 1) || (y == height- 1))
             return BASE_ENERGY;
 
@@ -134,7 +134,7 @@ double computeEnergy(int x, int y, guchar* buffer){
 	valueSum = valueV + valueH;
 
 	//Return the squareroot of the sum of differences
-	return sqrt(valueSum);
+	return round(sqrt(valueSum));
 }
 
 void *generateEnergyMatrix(void *arguments) {
@@ -162,36 +162,51 @@ void *generateEnergyMatrix(void *arguments) {
 
 }
 
+static inline uint64_t ucs_atomic_cswap64(volatile uint64_t *ptr,
+                                           uint64_t compare,
+                                           uint64_t swap)
+{
+     unsigned long prev;
+     asm volatile (
+           "lock cmpxchg %1, %2"
+           : "=a" (prev)
+           : "r"(swap), "m"(*ptr), "0" (compare)
+           : "memory");
+     return prev;
+}
+
 /*Declare a relax function to optimize the computation of a 
 	shortest path energy values*/
-
-void relax(int row, int col, int** edgeTo, double** distTo, int width) {
-
+int relax(int row, int col, int** edgeTo, int** distTo, int width) {
+	int relaxcount = 0;
         int nextRow = row + 1;
         for (int i = -1; i <= 1; i++) {
             int nextCol = col + i;
             if (nextCol < 0 || nextCol >= width)
                 continue;
-
-            if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]) {
-		//This will be replaced with Atomic swap operation
-                distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
-                edgeTo[nextRow][nextCol] = i;
-
-		//WORK IN PROGRESS - 
-		//double tmp = distTo[row][col] + energyArray[nextRow][nextCol];
-		//std::atomic_compare_exchange_weak (distTo[nextRow][nextCol], distTo[nextRow][nextCol], tmp);
-		
-
-            }
+	 int value = distTo[nextRow][nextCol];
+	 int newvalue = distTo[row][col] + energyArray[nextRow][nextCol];
+	while(true){
+		int oldvalue = ucs_atomic_cswap64((volatile uint64_t*)&distTo[nextRow][nextCol], value, newvalue);
+		if (oldvalue > newvalue){
+			relaxcount = 1;
+			distTo[nextRow][nextCol] = newvalue;
+                       edgeTo[nextRow][nextCol] = i;
+			continue;		
+		}
+		else{
+		   break;
+		}
+	}
         }
-    }
+	return relaxcount;
+}
 
-int* backTrack(int** edgeTo, double** distTo, int height, int width){
+int* backTrack(int** edgeTo, int** distTo, int height, int width){
 // Backtrack from the last row to get a shortest path
 	int* seams = new int[height];
         int minCol = 0;
-        double minDist = std::numeric_limits<double>::infinity();
+        int minDist = std::numeric_limits<int>::max();
         for (int col = 0; col < width; col++) {
             if (distTo[height - 1][col] < minDist) {
                 minDist = distTo[height - 1][col];
@@ -222,18 +237,22 @@ int* backTrack(int** edgeTo, double** distTo, int height, int width){
 		return transposedRGBuffer;
 }
 
-void *identifySeams(void *arguments) {  
+void *identifySeams(void *arguments) { 
+   int relaxcount = 0; 
     struct ThreadData *data = (struct ThreadData*)arguments;
     int num_rows = data -> num_rows;
     int num_cols = data -> num_cols;
     int start_row = data -> start_row;
     int stop_row = data -> stop_row;
-	for (int k = 0; k < num_rows-1; k++){
-	 for (int row = 0; row < stop_row-1; row++) {
+	for(int  k = 0; k < num_rows; k++){
+	 for (int row = start_row; row < stop_row-1; row++) {
             for (int col = 0; col < num_cols; col++) {
-               relax(row, col, edgeTo, distTo, num_cols);
+              relaxcount = relax(row, col, edgeTo, distTo, num_cols);
             }
 	}
+	 //pthread_barrier_wait(&barr);	
+	if (relaxcount == 0) //nothing has changed
+		break; //break out of the k loop
 }
 }
 
@@ -243,7 +262,7 @@ void initializeDistances(int width, int height)	{
                 if (row == 0)
                     distTo[row][col] = BASE_ENERGY;
                 else
-                    distTo[row][col] = std::numeric_limits<double>::infinity();	
+                    distTo[row][col] = std::numeric_limits<int>::max();	
             }
        }
 }
@@ -407,15 +426,15 @@ int main(int argc, char **argv){
 	if(orientation[0] == 'v'){
 	 	verticalSeams = new int[height];
 		paths = new int[height];
-		distTo = new double*[height];
+		distTo = new int*[height];
 		edgeTo = new int*[height];
 		//Declare a dynamic 2D array to hold the energy values for all pixels
-		energyArray = new double*[height];
+		energyArray = new int*[height];
 		for (int i = 0; i < height; i++)
-		energyArray[i] = new double[width];
+		energyArray[i] = new int[width];
 		
 		for (int i = 0; i < height; i++)
-		distTo[i] = new double[width];
+		distTo[i] = new int[width];
 
 		for (int i = 0; i < height; i++)
 		edgeTo[i] = new int[width];
@@ -444,14 +463,14 @@ int main(int argc, char **argv){
 	else{
 		verticalSeams = new int[width];
 		paths =  new int[width];
-		distTo = new double*[width];
+		distTo = new int*[width];
 		edgeTo = new int*[width];
 		//Declare a dynamic 2D array to hold the energy values for all pixels
-		energyArray = new double*[width];
+		energyArray = new int*[width];
 		for (int i = 0; i < width; i++)
-			energyArray[i] = new double[height];
+			energyArray[i] = new int[height];
 		for (int i = 0; i < width; i++)
-			distTo[i] = new double[height];
+			distTo[i] = new int[height];
 		for (int i = 0; i < width; i++)
 			edgeTo[i] = new int[height];
 		//A thread should the processing of the image divided into 50 chunks of height

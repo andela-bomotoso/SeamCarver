@@ -13,7 +13,7 @@
 #include <sys/time.h>
 
 using namespace std;
-pngwriter pngwrt(1,1,0,"out.png");
+pngwriter pngwrt(1,1,0,"out_serial.png");
 int BASE_ENERGY = 1000;
 int ROWS_PER_THREAD = 32;
 int width = 0;
@@ -148,6 +148,7 @@ void generateEnergyMatrix(int width, int height, char* orientation){
 
 /*Declare a relax function to optimize the computation of a 
 	shortest path energy values*/
+
 
 void relax(int row, int col, int** edgeTo, double** distTo, int width) {
 	int relax = 0;

@@ -13,7 +13,7 @@
 #include <sys/time.h>
 
 using namespace std;
-pngwriter pngwrt(1,1,0,"out.png");
+pngwriter pngwrt(1,1,0,"out_serial.png");
 int BASE_ENERGY = 1000;
 int ROWS_PER_THREAD = 32;
 int width = 0;
@@ -142,24 +142,23 @@ void generateEnergyMatrix(int width, int height, char* orientation){
                 energyArray[row][column] = computeEnergy(row, column, buffer);
         }
     }
-
-
 }
+
 
 /*Declare a relax function to optimize the computation of a 
 	shortest path energy values*/
 
 void relax(int row, int col, int** edgeTo, int** distTo, int width) {
-	int relax = 0;
         int nextRow = row + 1;
         for (int i = -1; i <= 1; i++) {
             int nextCol = col + i;
             if (nextCol < 0 || nextCol >= width)
                 continue;
-            if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]) {
-                distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
-                edgeTo[nextRow][nextCol] = i;
 
+            if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]) {
+		distTo[nextRow][nextCol] =  distTo[row][col] + energyArray[nextRow][nextCol];
+                edgeTo[nextRow][nextCol] = i;
+		
             }
         }
     }
@@ -211,8 +210,6 @@ int * identifySeams( int width, int height){
 	for (int i = 0; i < height; i++)
 		edgeTo[i] = new int[width];
 
-
-
 	//Initialize distTo to maximum values
 	
         for (int row = 0; row < height; row++) {
@@ -229,9 +226,6 @@ int * identifySeams( int width, int height){
             }
         }
 }
-
-
-
 //Carve out the vertical seams
 guchar* carveVertically(int* vertical_seams, guchar* buffer, int width, int height){
 	guchar* carved_imageV;
@@ -360,10 +354,11 @@ int main(int argc, char **argv){
 	 	verticalSeams = new int[height];
 		distTo = new int*[height];
 		edgeTo = new int*[height];
+	
 		//Declare a dynamic 2D array to hold the energy values for all pixels
 		energyArray = new int*[height];
 		for (int i = 0; i < height; i++)
-		energyArray[i] = new int[width];
+			energyArray[i] = new int[width];
 		generateEnergyMatrix(width, height, orientation);
 		cout<<"Removing vertical seams"<<endl;
 		identifySeams(width, height);
