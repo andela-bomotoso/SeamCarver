@@ -158,19 +158,6 @@ void generateEnergyMatrix(int width, int height, char* orientation){
 }
 
 
-static inline uint64_t ucs_atomic_cswap64(volatile uint64_t *ptr,
-                                           uint64_t compare,
-                                           uint64_t swap)
-{
-     unsigned long prev;
-     asm volatile (
-           "lock cmpxchg %1, %2"
-           : "=a" (prev)
-           : "r"(swap), "m"(*ptr), "0" (compare)
-           : "memory");
-     return prev;
-}
-
 
 /*Declare a relax function to optimize the computation of a 
 	shortest path energy values*/
