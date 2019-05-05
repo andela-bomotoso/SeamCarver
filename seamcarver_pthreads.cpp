@@ -13,7 +13,6 @@
 #include <sys/time.h>
 #include <pthread.h>
 #include <sys/time.h>
-#include <atomic>
 #include <iostream>
 #include <chrono>
 
@@ -176,7 +175,26 @@ static inline uint64_t ucs_atomic_cswap64(volatile uint64_t *ptr,
 
 /*Declare a relax function to optimize the computation of a 
 	shortest path energy values*/
-int relax(int row, int col, int** edgeTo, int** distTo, int width) {
+
+void relax(int row, int col, int** edgeTo, int** distTo, int width) {
+        int nextRow = row + 1;
+        for (int i = -1; i <= 1; i++) {
+            int nextCol = col + i;
+            if (nextCol < 0 || nextCol >= width)
+                continue;
+
+            if (distTo[nextRow][nextCol] > distTo[row][col] + energyArray[nextRow][nextCol]) {
+		distTo[nextRow][nextCol] =  distTo[row][col] + energyArray[nextRow][nextCol];
+                edgeTo[nextRow][nextCol] = i;
+		
+            }
+        }
+    }
+
+
+/*Declare a relax function to optimize the computation of a 
+	shortest path energy values*/
+int relax1(int row, int col, int** edgeTo, int** distTo, int width) {
 	int relaxcount = 0;
         int nextRow = row + 1;
         for (int i = -1; i <= 1; i++) {
@@ -256,7 +274,7 @@ void *identifySeams(void *arguments) {
     int num_cols = data -> num_cols;
     int start_col = data -> start_col;
     int stop_col = data -> stop_col;
-	for (int row = 0; row < num_rows-1; row++) {
+    for (int row = 0; row < num_rows-1; row++) {
             for (int col = start_col; col < stop_col; col++) {
                relax(row, col, edgeTo, distTo, num_cols);
             }
