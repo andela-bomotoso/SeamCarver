@@ -13,7 +13,6 @@
 #include <sys/time.h>
 #include <pthread.h>
 #include <sys/time.h>
-#include <iostream>
 #include <chrono>
 
 using namespace std;
@@ -190,35 +189,6 @@ void relax(int row, int col, int** edgeTo, int** distTo, int width) {
             }
         }
     }
-
-
-/*Declare a relax function to optimize the computation of a 
-	shortest path energy values*/
-int relax1(int row, int col, int** edgeTo, int** distTo, int width) {
-	int relaxcount = 0;
-        int nextRow = row + 1;
-        for (int i = -1; i <= 1; i++) {
-            int nextCol = col + i;
-            if (nextCol < 0 || nextCol >= width)
-                continue;
-	 int value = distTo[nextRow][nextCol];
-	 int newvalue = distTo[row][col] + energyArray[nextRow][nextCol];
-	while(true){
-		int oldvalue = ucs_atomic_cswap64((volatile uint64_t*)&distTo[nextRow][nextCol], value, newvalue);
-		if (oldvalue > newvalue){
-			relaxcount = 1;
-			distTo[nextRow][nextCol] = newvalue;
-                       edgeTo[nextRow][nextCol] = i;
-			continue;		
-		}
-		else{
-		   break;
-		}
-	}
-        }
-	return relaxcount;
-}
-
 
 
 
