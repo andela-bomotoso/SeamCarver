@@ -158,7 +158,7 @@ void relax(int row, int col, int** edgeTo, int** distTo, int width) {
                 continue;
 
             if (distTo[nextRow][nextCol] > distTo[row][col] + energyArray[nextRow][nextCol]) {
-		distTo[nextRow][nextCol] =  distTo[row][col] + energyArray[nextRow][nextCol];
+	               distTo[nextRow][nextCol] =  distTo[row][col] + energyArray[nextRow][nextCol];
                 edgeTo[nextRow][nextCol] = i;
 		
             }
@@ -377,11 +377,13 @@ int main(int argc, char **argv){
 			energyArray[i] = new int[height];
 		generateEnergyMatrix(height, width, orientation);
 
-		cout<<"Removing horizontal seams"<<endl;
+	cout<<"Removing horizontal seams"<<endl;
 		//Start the clock
 	        auto start_time = chrono::high_resolution_clock::now();
 		identifySeams(height, width);
 		int* h_seams =  backTrack(edgeTo, distTo, width, height);
+ for (int i = 0; i < width; i++)
+ cout<<h_seams[i]<<endl;
 		auto end_time = chrono::high_resolution_clock::now();
 		cout << "Time Taken: "<<chrono::duration_cast<chrono::milliseconds>(end_time - start_time).count() << "ms"<<endl;
 		guchar* transBuffer = transposeRGBuffer(buffer, width, height);
