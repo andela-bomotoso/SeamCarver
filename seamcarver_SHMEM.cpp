@@ -16,7 +16,7 @@
 #include <chrono>
 
 using namespace std;
-pngwriter pngwrt(1,1,0,"out_pthreads.png");
+pngwriter pngwrt(1,1,0,"out_SHMEM.png");
 int BASE_ENERGY = 1000;
 int COLS_PER_THREAD = 64;
 int width = 0;
