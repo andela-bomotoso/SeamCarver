@@ -28,7 +28,7 @@ int** energyArray;
 guchar* seams;
 guchar* buffer;
 int* verticalSeams;
-int** distTo;
+double** distTo;
 int** edgeTo;
 struct ThreadData {
     int num_rows;
@@ -141,7 +141,7 @@ int computeEnergy(int x, int y, guchar* buffer){
 	valueSum = valueV + valueH;
 
 	//Return the squareroot of the sum of differences
-	return round(sqrt(valueSum));
+	return sqrt(valueSum);
 }
 
 void generateEnergyMatrix(int width, int height, char* orientation){
@@ -162,7 +162,7 @@ void generateEnergyMatrix(int width, int height, char* orientation){
 /*Declare a relax function to optimize the computation of a 
 	shortest path energy values*/
 
-void relax(int row, int col, int** edgeTo, int** distTo, int width) {
+void relax(int row, int col, int** edgeTo, double** distTo, int width) {
         int nextRow = row + 1;
         for (int i = -1; i <= 1; i++) {
             int nextCol = col + i;
@@ -179,11 +179,11 @@ void relax(int row, int col, int** edgeTo, int** distTo, int width) {
 
 
 
-int* backTrack(int** edgeTo, int** distTo, int height, int width){
+int* backTrack(int** edgeTo, double** distTo, int height, int width){
 // Backtrack from the last row to get a shortest path
 	int* seams = new int[height];
         int minCol = 0;
-        double minDist = std::numeric_limits<int>::max();
+        double minDist = std::numeric_limits<double>::infinity();
         for (int col = 0; col < width; col++) {
             if (distTo[height - 1][col] < minDist) {
                 minDist = distTo[height - 1][col];
@@ -363,7 +363,7 @@ int main(int argc, char **argv){
 	//Check the orientation to determine how to carve
 	if(orientation[0] == 'v'){
 	 	verticalSeams = new int[height];
-		distTo = new int*[height];
+		distTo = new double*[height];
 		edgeTo = new int*[height];
 	
 		//Declare a dynamic 2D array to hold the energy values for all pixels
@@ -373,7 +373,7 @@ int main(int argc, char **argv){
 		generateEnergyMatrix(width, height, orientation);
 
 		for (int i = 0; i < height; i++)
-			distTo[i] = new int[width];
+			distTo[i] = new double[width];
 
 		for (int i = 0; i < height; i++)
 			edgeTo[i] = new int[width];
@@ -421,7 +421,7 @@ int main(int argc, char **argv){
 	}
 	else{
 		verticalSeams = new int[width];
-		distTo = new int*[width];
+		distTo = new double*[width];
 		edgeTo = new int*[width];
 		//Declare a dynamic 2D array to hold the energy values for all pixels
 		energyArray = new int*[width];
@@ -429,7 +429,7 @@ int main(int argc, char **argv){
 			energyArray[i] = new int[height];
 		generateEnergyMatrix(height, width, orientation);
 		for (int i = 0; i < width; i++)
-			distTo[i] = new int[height];
+			distTo[i] = new double[height];
 		for (int i = 0; i < width; i++)
 			edgeTo[i] = new int[height];
 		int num_threads = height/COLS_PER_THREAD;
