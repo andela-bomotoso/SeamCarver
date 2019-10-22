@@ -210,6 +210,17 @@ guchar*  transposeRGBuffer(guchar* buffer, int width, int height) {
 	return transposedRGBuffer;
 }
 
+void generateEnergyMatrix(int start_row, int stop_row, char* orientation){
+	 for (int row = 1; row < stop_row; row++){
+                for (int column = 0; column < width; column++){
+                        if (orientation[0] == 'v')
+                                energyArray[row][column] = computeEnergy(column, row, buffer);
+                        else
+                                energyArray[row][column] = computeEnergy(row, column, buffer);
+                }
+        }		
+
+}
 //Generate Energy Matrix
 void *generateEnergyMatrix(void *arguments)	{
 	struct ThreadData *data = (struct ThreadData*)arguments;
@@ -350,19 +361,23 @@ double timestamp()
 }
 
 int main(int argc, char **argv){
+	shmem_init();
+	int me = shmem_my_pe();
+	int npes = shmem_n_pes();
+
 	char * original_img = argv[1]; 
 	char* orientation = argv[2];
 
 	pngwrt.readfromfile(original_img);
 	width = pngwrt.getwidth();
 	height = pngwrt.getheight();
+        if (me == 0){
+		cout<<"Width: "<<width<<" Height: "<<height<<endl;
+		double begin, end;
 
-	cout<<"Width: "<<width<<" Height: "<<height<<endl;
-	double begin, end;
-
-	begin = timestamp();
-	// The main thread
-	std::thread::id main_thread_id = std::this_thread::get_id();	
+		begin = timestamp();
+	}
+		
 	int size = 3 * width * height;
 	buffer = g_try_new(guchar,size);
 	buffer = rgb_buffer_from_image(&pngwrt);
@@ -384,10 +399,23 @@ int main(int argc, char **argv){
 		edgeTo = new int*[height];
 		//Declare a dynamic 2D array to hold the energy values for all pixels
 		energyArray = new double*[height];
-		//Spawn up threads to generate the energy matrix for (int i = 0;  i < num_threads; i+
-		int num_threads = height/64; 
+		 for (int i = 0; i < height; i++)
+                	energyArray[i] = new double[width];
 
-		pthread_t threads[num_threads];
+		//Spawn up threads to generate the energy matrix for (int i = 0;  i < num_threads; i+
+		//int num_threads = height/64;
+		int row_per_pe = (height + npes - 1)/npes;
+		
+		//Divide the work among the available PEs
+		start_row = me * row_per_pe;
+		stop_row = (me + 1)*row_per_pe; 
+		
+		//Ensure the last PE does not go past the height
+		if (me == npes - 1)
+			stop_row = height;
+		}
+
+		/*pthread_t threads[num_threads];
 		struct ThreadData data[num_threads];
 		int row_per_thread = (height+num_threads - 1)/ num_threads;
 		for (int i = 0; i < num_threads; i++)	{
@@ -400,20 +428,23 @@ int main(int argc, char **argv){
 			data[i].orientation = orientation;
 		}
 		data[0].start_row = 0;
-		data[num_threads-1].stop_row = height;
+		data[num_threads-1].stop_row = height;*/
 
-		for (int i = 0; i < num_threads; i++){
+		/*for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
-		}
-		cout<<"Removing vertical seams"<<endl;
+		}*/
+		genearateEnergyMatrix(start_row, stop_row, orientation);
+		
+		if (me == 0){
+			cout<<"Removing vertical seams"<<endl;
 
-		for (int i = 0;  i < num_threads; i++){
+		/*for (int i = 0;  i < num_threads; i++){
 			pthread_join(threads[i], NULL);
+		}*/
+
+			identifySeams(width, height);
+			verticalSeams =  backTrack(edgeTo, distTo, height, width);
 		}
-
-		identifySeams(width, height);
-		verticalSeams =  backTrack(edgeTo, distTo, height, width);
-
 		for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &carveSeams, (void*)&data[i]);
 		}
