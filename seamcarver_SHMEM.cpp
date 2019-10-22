@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <thread>
+#include <shmem.h>
 
 using namespace std;
 pngwriter pngwrt(1,1,0,"out_SHMEM.png");
@@ -30,6 +31,8 @@ double** distTo;
 int** edgeTo;
 guchar* carved_imageV;
 pthread_barrier_t barr;
+static long pSync[SHMEM_BARRIER_SYNC_SIZE];
+
 struct ThreadData {
 	int num_rows;
 	int num_cols;
@@ -40,6 +43,30 @@ struct ThreadData {
 	char* orientation;
 };
 
+double** initializeEnergyArray(int rows, int columns){
+	double** energyArray;
+	energyArray = (double**) shmem_malloc(rows*sizeof(double*));
+	for (int i = 0; i < rows; i++)
+		energyArray[i] = (double*) shmem_malloc(columns*sizeof(double));
+	return energyArray;
+}
+
+double** initializeDistances(int rows, int columns)	{
+	double** distTo;
+	distTo = (double**) shmem_malloc(rows*sizeof(double*));
+	for (int i = 0; i < rows; i++)
+		distTo[i] = (double*) shmem_malloc(columns*sizeof(double));
+	return distTo;
+}
+
+int** initializeEdges(int rows, int columns){
+	int** edgeTo;
+	edgeTo = (int**) shmem_malloc(rows*sizeof(int));
+	for (int i = 0; i < rows; i++)
+		edgeTo[i] = (int*) shmem_malloc(columns*sizeof(int));
+	return edgeTo;
+}
+	
 /*Copied from the liblqr example
   convert the image in the right format */
 guchar * rgb_buffer_from_image(pngwriter *png)
@@ -210,16 +237,20 @@ guchar*  transposeRGBuffer(guchar* buffer, int width, int height) {
 	return transposedRGBuffer;
 }
 
-void generateEnergyMatrix(int start_row, int stop_row, char* orientation){
+void generateEnergyMatrix(int start_row, int stop_row, int num_pes, char* orientation){
 	 for (int row = 1; row < stop_row; row++){
                 for (int column = 0; column < width; column++){
                         if (orientation[0] == 'v')
                                 energyArray[row][column] = computeEnergy(column, row, buffer);
                         else
                                 energyArray[row][column] = computeEnergy(row, column, buffer);
+			double current_val = energyArray[row][column];
+                        shmem_double_put(&energyArray[row][column], &current_val, 1, 0);
                 }
-        }		
-
+        }
+	shmem_barrier_all();
+        if (num_pes > 1)
+                shmem_broadcast32(energyArray, energyArray, height * width, 0, 0, 0, num_pes, pSync);
 }
 //Generate Energy Matrix
 void *generateEnergyMatrix(void *arguments)	{
@@ -231,7 +262,6 @@ void *generateEnergyMatrix(void *arguments)	{
 	char* orientation = data -> orientation;
 	for (int i = start_row; i < stop_row; i++)
 		energyArray[i] = new double[width];
-
 	for (int row = 1; row < stop_row; row++){
 		for (int column = 0; column < num_cols; column++){
 			if (orientation[0] == 'v')
@@ -261,7 +291,35 @@ int * identifySeams( int width, int height){
 	}                                                                                                    for (int row = 0; row < height - 1; row++) {
 		for (int col = 0; col < width; col++) {
 			relax(row, col, edgeTo, distTo, width);                                                      }                                                                                            }
-}                                                                                                    //Carve out the seams from the image               
+}
+
+                                                                                                    //Carve out the seams from the image               
+guchar* carveSeams(int start_row, int stop_row)	{
+	for (int row = 0; row < height; row++){
+                //Get the RGB value before the seam
+                for (int col = 0; col < verticalSeams[row]; col++){
+                        for (int color = 0; color < 3; color++){
+                                carved_imageV[(row * width + col) * 3 + color] = buffer[(row * width
+                                                + col) * 3 + color];
+                                seams[(row * width + col) * 3 + color] = buffer[(row * width + col) *
+                                        3 + color];
+                        }
+                }
+
+               // Get the RGB values after the seams
+                for (int col = verticalSeams[row]; col < width-1; col++) {
+                        for (int color = 0; color < 3; color++){
+                                carved_imageV[(row * width + col) * 3 + color] = buffer[(row * width
+                                                + col+1) * 3 + color];
+                                seams[(row * width + col+1) * 3 + color] = buffer[(row * width + col+
+                                                1) * 3 + color];
+                        }
+                }
+        }
+
+        return carved_imageV;
+}
+
 void *carveSeams(void *arguments){
 	struct ThreadData *data = (struct ThreadData*)arguments;
 	int height = data -> num_rows;
@@ -292,6 +350,39 @@ void *carveSeams(void *arguments){
 	}
 
 	return carved_imageV;
+}
+
+guchar* carveVertically(int* vertical_seams, guchar* buffer, int width, int height){
+        guchar* carved_imageV;
+        int size = 3 * width * height;
+
+        // allocate memory to store w * h * channels unsigned chars
+        carved_imageV = g_try_new(guchar, size);
+        g_assert(carved_imageV != NULL);
+        seams = g_try_new(guchar, size);
+        g_assert(seams != NULL);
+
+
+        for (int row = 0; row < height; row++){
+               // Get the RGB value before the seam
+                for (int col = 0; col < vertical_seams[row]; col++){
+                        for (int color = 0; color < 3; color++){
+                                carved_imageV[(row * width + col) * 3 + color] = buffer[(row * width + col) * 3 + color]
+;
+                                seams[(row * width + col) * 3 + color] = buffer[(row * width + col) * 3 + color];
+                        }
+                }
+
+                //Get the RGB values after the seams
+                for (int col = vertical_seams[row]; col < width-1; col++) {
+                        for (int color = 0; color < 3; color++){
+                                carved_imageV[(row * width + col) * 3 + color] = buffer[(row * width + col+1) * 3 + color];
+                                seams[(row * width + col+1) * 3 + color] = buffer[(row * width + col+1) * 3 + color];
+                        }
+                }
+        }
+
+        return carved_imageV;
 }
 LqrRetVal printSeams(LqrCarver *carver, pngwriter *pngwrt){
 
@@ -367,15 +458,17 @@ int main(int argc, char **argv){
 
 	char * original_img = argv[1]; 
 	char* orientation = argv[2];
-
+	double begin, end;
+	begin = timestamp();
 	pngwrt.readfromfile(original_img);
 	width = pngwrt.getwidth();
 	height = pngwrt.getheight();
+	for (int i = 0; i < SHMEM_BARRIER_SYNC_SIZE; i++) 
+		pSync[i] = SHMEM_SYNC_VALUE;
+        shmem_sync_all();
+
         if (me == 0){
 		cout<<"Width: "<<width<<" Height: "<<height<<endl;
-		double begin, end;
-
-		begin = timestamp();
 	}
 		
 	int size = 3 * width * height;
@@ -395,25 +488,29 @@ int main(int argc, char **argv){
 	//Vertical Orientation
 	if(orientation[0] == 'v'){
 		verticalSeams = new int[height];
-		distTo = new double*[height];
-		edgeTo = new int*[height];
-		//Declare a dynamic 2D array to hold the energy values for all pixels
-		energyArray = new double*[height];
+		//distTo = new double*[height];
+		//edgeTo = new int*[height];
+		//Declare a dynamic 2D array to hold values for all pixels
+
+		distTo = initializeDistances(height, width);
+		edgeTo = initializeEdges(height, width);
+		energyArray = initializeEnergyArray(height, width);
+		/*energyArray = new double*[height];
 		 for (int i = 0; i < height; i++)
-                	energyArray[i] = new double[width];
+                	energyArray[i] = new double[width];*/
 
 		//Spawn up threads to generate the energy matrix for (int i = 0;  i < num_threads; i+
 		//int num_threads = height/64;
 		int row_per_pe = (height + npes - 1)/npes;
 		
 		//Divide the work among the available PEs
-		start_row = me * row_per_pe;
-		stop_row = (me + 1)*row_per_pe; 
+		int start_row = me * row_per_pe;
+		int stop_row = (me + 1)*row_per_pe; 
 		
 		//Ensure the last PE does not go past the height
 		if (me == npes - 1)
 			stop_row = height;
-		}
+		
 
 		/*pthread_t threads[num_threads];
 		struct ThreadData data[num_threads];
@@ -433,7 +530,7 @@ int main(int argc, char **argv){
 		/*for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
 		}*/
-		genearateEnergyMatrix(start_row, stop_row, orientation);
+		generateEnergyMatrix(start_row, stop_row, npes, orientation);
 		
 		if (me == 0){
 			cout<<"Removing vertical seams"<<endl;
@@ -441,23 +538,27 @@ int main(int argc, char **argv){
 		/*for (int i = 0;  i < num_threads; i++){
 			pthread_join(threads[i], NULL);
 		}*/
+		
 
 			identifySeams(width, height);
 			verticalSeams =  backTrack(edgeTo, distTo, height, width);
-		}
-		for (int i = 0; i < num_threads; i++){
+		
+		/*for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &carveSeams, (void*)&data[i]);
 		}
 
 		for (int i = 0;  i < num_threads; i++){
 			pthread_join(threads[i], NULL);
-		}
+		}*/
+		//carveSeams(start_row, stop_row);
+		guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
 
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
 		carved_seams = lqr_carver_new(seams, width, height, 3);
 	}
+}
 	//Horizontal Seams
-	else{
+	/*else{
 		verticalSeams = new int[width];
 		distTo = new double*[width];
 		edgeTo = new int*[width];
@@ -503,16 +604,19 @@ int main(int argc, char **argv){
 
 		carver = lqr_carver_new(transposeRGBuffer(carved_imageV, height,width), width, height, 3);
 		carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
-	}
+	}*/
 
 	//Create a Carver object with the carved image buffer
-	TRAP(lqr_carver_init(carver, max_step, rigidity));
-	//write_carver_to_image(carver, &pngwrt, orientation);
-	printSeams(carved_seams, &pngwrt);
-	lqr_carver_destroy(carver);
-	pngwrt.close();
-	end = timestamp();
-	printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
+	if (me == 0){
+		TRAP(lqr_carver_init(carver, max_step, rigidity));
+		//write_carver_to_image(carver, &pngwrt, orientation);
+		printSeams(carved_seams, &pngwrt);
+		lqr_carver_destroy(carver);
+		pngwrt.close();
+		double end = timestamp();
+		printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
+	}
+	shmem_finalize();
 	return 0;
 }
 
