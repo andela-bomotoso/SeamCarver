@@ -252,27 +252,8 @@ void generateEnergyMatrix(int start_row, int stop_row, int num_pes, char* orient
         if (num_pes > 1)
                 shmem_broadcast32(energyArray, energyArray, height * width, 0, 0, 0, num_pes, pSync);
 }
-//Generate Energy Matrix
-void *generateEnergyMatrix(void *arguments)	{
-	struct ThreadData *data = (struct ThreadData*)arguments;
-	int num_rows = data -> num_rows;
-	int num_cols = data -> num_cols;
-	int start_row = data -> start_row;
-	int stop_row = data -> stop_row;
-	char* orientation = data -> orientation;
-	for (int i = start_row; i < stop_row; i++)
-		energyArray[i] = new double[width];
-	for (int row = 1; row < stop_row; row++){
-		for (int column = 0; column < num_cols; column++){
-			if (orientation[0] == 'v')
-				energyArray[row][column] = computeEnergy(column, row, buffer);
-			else
-				energyArray[row][column] = computeEnergy(row, column, buffer);
-		}
-	}
-}
-
-int * identifySeams( int width, int height){
+//Identify the seams in an image
+int* identifySeams( int width, int height){
 
 	for (int i = 0; i < height; i++)
 		distTo[i] = new double[width];
@@ -291,9 +272,7 @@ int * identifySeams( int width, int height){
 	}                                                                                                    for (int row = 0; row < height - 1; row++) {
 		for (int col = 0; col < width; col++) {
 			relax(row, col, edgeTo, distTo, width);                                                      }                                                                                            }
-}
-
-                                                                                                    //Carve out the seams from the image               
+}                                                                                 //Carve out the seams from the image               
 guchar* carveSeams(int start_row, int stop_row)	{
 	for (int row = 0; row < height; row++){
                 //Get the RGB value before the seam
@@ -320,42 +299,9 @@ guchar* carveSeams(int start_row, int stop_row)	{
         return carved_imageV;
 }
 
-void *carveSeams(void *arguments){
-	struct ThreadData *data = (struct ThreadData*)arguments;
-	int height = data -> num_rows;
-	int width = data -> num_cols;
-	int start_row = data -> start_row;
-	int stop_row = data -> stop_row;
-
-	for (int row = 0; row < height; row++){
-		//Get the RGB value before the seam
-		for (int col = 0; col < verticalSeams[row]; col++){
-			for (int color = 0; color < 3; color++){
-				carved_imageV[(row * width + col) * 3 + color] = buffer[(row * width
-						+ col) * 3 + color];
-				seams[(row * width + col) * 3 + color] = buffer[(row * width + col) *
-					3 + color];
-			}
-		}
-
-		//Get the RGB values after the seams
-		for (int col = verticalSeams[row]; col < width-1; col++) {
-			for (int color = 0; color < 3; color++){
-				carved_imageV[(row * width + col) * 3 + color] = buffer[(row * width
-						+ col+1) * 3 + color];
-				seams[(row * width + col+1) * 3 + color] = buffer[(row * width + col+
-						1) * 3 + color];
-			}
-		}
-	}
-
-	return carved_imageV;
-}
-
-guchar* carveVertically(int* vertical_seams, guchar* buffer, int width, int height){
+guchar* carveSeams(int* vertical_seams, guchar* buffer, int width, int height){
         guchar* carved_imageV;
         int size = 3 * width * height;
-
         // allocate memory to store w * h * channels unsigned chars
         carved_imageV = g_try_new(guchar, size);
         g_assert(carved_imageV != NULL);
@@ -488,71 +434,28 @@ int main(int argc, char **argv){
 	//Vertical Orientation
 	if(orientation[0] == 'v'){
 		verticalSeams = new int[height];
-		//distTo = new double*[height];
-		//edgeTo = new int*[height];
-		//Declare a dynamic 2D array to hold values for all pixels
-
 		distTo = initializeDistances(height, width);
 		edgeTo = initializeEdges(height, width);
 		energyArray = initializeEnergyArray(height, width);
-		/*energyArray = new double*[height];
-		 for (int i = 0; i < height; i++)
-                	energyArray[i] = new double[width];*/
-
-		//Spawn up threads to generate the energy matrix for (int i = 0;  i < num_threads; i+
-		//int num_threads = height/64;
+		//Divide the work among the PEs
 		int row_per_pe = (height + npes - 1)/npes;
-		
-		//Divide the work among the available PEs
+	
 		int start_row = me * row_per_pe;
 		int stop_row = (me + 1)*row_per_pe; 
 		
 		//Ensure the last PE does not go past the height
 		if (me == npes - 1)
 			stop_row = height;
-		
 
-		/*pthread_t threads[num_threads];
-		struct ThreadData data[num_threads];
-		int row_per_thread = (height+num_threads - 1)/ num_threads;
-		for (int i = 0; i < num_threads; i++)	{
-			data[i].start_row = i*row_per_thread;
-			data[i].stop_row = (i + 1)*row_per_thread;
-			data[i].num_rows = height;
-			data[i].num_cols = width;
-			data[i].thread_id = i;
-			data[i].thread_num = num_threads;
-			data[i].orientation = orientation;
-		}
-		data[0].start_row = 0;
-		data[num_threads-1].stop_row = height;*/
-
-		/*for (int i = 0; i < num_threads; i++){
-			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
-		}*/
 		generateEnergyMatrix(start_row, stop_row, npes, orientation);
-		
 		if (me == 0){
 			cout<<"Removing vertical seams"<<endl;
-
-		/*for (int i = 0;  i < num_threads; i++){
-			pthread_join(threads[i], NULL);
-		}*/
-		
-
+			//Seams Identification
 			identifySeams(width, height);
 			verticalSeams =  backTrack(edgeTo, distTo, height, width);
-		
-		/*for (int i = 0; i < num_threads; i++){
-			pthread_create(&threads[i], NULL, &carveSeams, (void*)&data[i]);
-		}
-
-		for (int i = 0;  i < num_threads; i++){
-			pthread_join(threads[i], NULL);
-		}*/
-		//carveSeams(start_row, stop_row);
-		guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
-
+		//carve out the identified seams
+		guchar* carved_imageV = carveSeams(verticalSeams,buffer, width, height);
+		cout<<"After carving seams out "<<endl;
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
 		carved_seams = lqr_carver_new(seams, width, height, 3);
 	}
