@@ -237,7 +237,7 @@ guchar*  transposeRGBuffer(guchar* buffer, int width, int height) {
 	return transposedRGBuffer;
 }
 
-void generateEnergyMatrix(int start_row, int stop_row, int num_pes, char* orientation){
+void generateEnergyMatrix(int start_row, int stop_row, int num_pes, int width, char* orientation){
 	 for (int row = 1; row < stop_row; row++){
                 for (int column = 0; column < width; column++){
                         if (orientation[0] == 'v')
@@ -447,7 +447,7 @@ int main(int argc, char **argv){
 		if (me == npes - 1)
 			stop_row = height;
 
-		generateEnergyMatrix(start_row, stop_row, npes, orientation);
+		generateEnergyMatrix(start_row, stop_row, npes, width, orientation);
 		if (me == 0){
 			cout<<"Removing vertical seams"<<endl;
 		//	Seams Identification
@@ -476,13 +476,15 @@ int main(int argc, char **argv){
                 //Ensure the last PE does not go past the height
                 if (me == npes - 1)
                         stop_row = width;
+		//cout<<start_row<<"Stop row: "<<stop_row<<endl;
 		//cout << "Before generating energy"<<endl;
-                generateEnergyMatrix(start_row, stop_row, npes, orientation);
-                if (me == 0){
+                generateEnergyMatrix(start_row, stop_row, npes, height, orientation);
+                //cout << "After generating energy"<<endl;
+		if (me == 0){
                         cout<<"Removing horizontal seams"<<endl;
                         //Seams Identification
-                cout<<"After generating energy"<<endl;
-		identifySeams(width, height);
+                //cout<<"After generating energy"<<endl;
+		identifySeams(height, width);
                 verticalSeams =  backTrack(edgeTo, distTo, width, height);
 		buffer = transposeRGBuffer(buffer, width, height);
                 //carve out the identified seams
