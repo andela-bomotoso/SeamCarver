@@ -450,10 +450,10 @@ int main(int argc, char **argv){
 		generateEnergyMatrix(start_row, stop_row, npes, orientation);
 		if (me == 0){
 			cout<<"Removing vertical seams"<<endl;
-			//Seams Identification
+		//	Seams Identification
 			identifySeams(width, height);
 			verticalSeams =  backTrack(edgeTo, distTo, height, width);
-		//carve out the identified seams
+		//Carve out the identified seams
 		guchar* carved_imageV = carveSeams(verticalSeams,buffer, width, height);
 		cout<<"After carving seams out "<<endl;
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
@@ -461,8 +461,36 @@ int main(int argc, char **argv){
 	}
 }
 	//Horizontal Seams
-	/*else{
+	else{
 		verticalSeams = new int[width];
+                distTo = initializeDistances(width, height);
+                edgeTo = initializeEdges(width, height);
+                energyArray = initializeEnergyArray(width, height);
+		//cout << "After all initialization"<<endl;
+                //Divide the work among the PEs
+                int row_per_pe = (width + npes - 1)/npes;
+
+                int start_row = me * row_per_pe;
+                int stop_row = (me + 1)*row_per_pe;
+
+                //Ensure the last PE does not go past the height
+                if (me == npes - 1)
+                        stop_row = width;
+		//cout << "Before generating energy"<<endl;
+                generateEnergyMatrix(start_row, stop_row, npes, orientation);
+                if (me == 0){
+                        cout<<"Removing horizontal seams"<<endl;
+                        //Seams Identification
+                cout<<"After generating energy"<<endl;
+		identifySeams(width, height);
+                verticalSeams =  backTrack(edgeTo, distTo, width, height);
+		buffer = transposeRGBuffer(buffer, width, height);
+                //carve out the identified seams
+                guchar* carved_imageV = carveSeams(verticalSeams,buffer, height, width);
+                  carver = lqr_carver_new(transposeRGBuffer(carved_imageV, height,width), width, height, 3);
+                carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
+		}
+		/*verticalSeams = new int[width];
 		distTo = new double*[width];
 		edgeTo = new int*[width];
 
@@ -506,8 +534,8 @@ int main(int argc, char **argv){
 		}
 
 		carver = lqr_carver_new(transposeRGBuffer(carved_imageV, height,width), width, height, 3);
-		carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
-	}*/
+		carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);*/
+	}
 
 	//Create a Carver object with the carved image buffer
 	if (me == 0){
