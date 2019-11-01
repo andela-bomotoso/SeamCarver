@@ -33,8 +33,8 @@ pthread_barrier_t barr;
 struct ThreadData {
 	int num_rows;
 	int num_cols;
-	int start_row;
-	int stop_row;
+	int start_col;
+	int stop_col;
 	int thread_id;
 	int thread_num;
 	char* orientation;
@@ -215,14 +215,14 @@ void *generateEnergyMatrix(void *arguments)	{
 	struct ThreadData *data = (struct ThreadData*)arguments;
 	int num_rows = data -> num_rows;
 	int num_cols = data -> num_cols;
-	int start_row = data -> start_row;
-	int stop_row = data -> stop_row;
+	int start_col = data -> start_col;
+	int stop_col = data -> stop_col;
 	char* orientation = data -> orientation;
-	for (int i = start_row; i < stop_row; i++)
+	for (int i = 0; i < num_rows; i++)
 		energyArray[i] = new double[width];
 
-	for (int row = 1; row < stop_row; row++){
-		for (int column = 0; column < num_cols; column++){
+	for (int row = 1; row < num_rows; row++){
+		for (int column = start_col; column < stop_col; column++){
 			if (orientation[0] == 'v')
 				energyArray[row][column] = computeEnergy(column, row, buffer);
 			else
@@ -255,8 +255,8 @@ void *carveSeams(void *arguments){
 	struct ThreadData *data = (struct ThreadData*)arguments;
 	int height = data -> num_rows;
 	int width = data -> num_cols;
-	int start_row = data -> start_row;
-	int stop_row = data -> stop_row;
+	int start_col = data -> start_col;
+	int stop_col = data -> stop_col;
 
 	for (int row = 0; row < height; row++){
 		//Get the RGB value before the seam
@@ -385,22 +385,24 @@ int main(int argc, char **argv){
 		//Declare a dynamic 2D array to hold the energy values for all pixels
 		energyArray = new double*[height];
 		//Spawn up threads to generate the energy matrix for (int i = 0;  i < num_threads; i+
-		int num_threads = height/64; 
+		int num_threads = width/64; 
 
 		pthread_t threads[num_threads];
 		struct ThreadData data[num_threads];
-		int row_per_thread = (height+num_threads - 1)/ num_threads;
+		//int row_per_thread = (height+num_threads - 1)/ num_threads;
+		int col_per_thread = (width + num_threads - 1)/ num_threads;
+
 		for (int i = 0; i < num_threads; i++)	{
-			data[i].start_row = i*row_per_thread;
-			data[i].stop_row = (i + 1)*row_per_thread;
+			data[i].start_col = i*col_per_thread;
+			data[i].stop_col = (i + 1)*col_per_thread;
 			data[i].num_rows = height;
 			data[i].num_cols = width;
 			data[i].thread_id = i;
 			data[i].thread_num = num_threads;
 			data[i].orientation = orientation;
 		}
-		data[0].start_row = 0;
-		data[num_threads-1].stop_row = height;
+		data[0].start_col = 0;
+		data[num_threads-1].stop_col = width;
 
 		for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
@@ -433,22 +435,22 @@ int main(int argc, char **argv){
 
 		//Declare a dynamic 2D array to hold the energy values for all pixels
 		energyArray = new double*[width];
-		int num_threads = width/64;
+		int num_threads = height/64;
 		pthread_t threads[num_threads];
 		struct ThreadData data[num_threads];
-		int row_per_thread = (width + num_threads - 1)/num_threads;
+		int col_per_thread = (height + num_threads - 1)/num_threads;
 		//Spawn up threads that will generate the energy matrix
 		for (int i = 0; i < num_threads;  i++){
-			data[i].start_row = i * row_per_thread;
-			data[i].stop_row = (i + 1)*row_per_thread;
+			data[i].start_col = i * col_per_thread;
+			data[i].stop_col = (i + 1)*col_per_thread;
 			data[i].num_rows = width;
 			data[i].num_cols = height;
 			data[i].thread_id = i;
 			data[i].thread_num = num_threads;
 			data[i].orientation = orientation;
 		}
-		data[0].start_row = 0;
-		data[num_threads-1].stop_row = width;
+		data[0].start_col = 0;
+		data[num_threads-1].stop_col = width;
 		for (int i = 0; i <num_threads; i++){
 			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
 		}
