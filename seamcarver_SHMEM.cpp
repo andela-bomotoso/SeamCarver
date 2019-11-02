@@ -237,9 +237,9 @@ guchar*  transposeRGBuffer(guchar* buffer, int width, int height) {
 	return transposedRGBuffer;
 }
 
-void generateEnergyMatrix(int start_row, int stop_row, int num_pes, int width, char* orientation){
-	 for (int row = 1; row < stop_row; row++){
-                for (int column = 0; column < width; column++){
+void generateEnergyMatrix(int start_col, int stop_col, int num_pes, int height, char* orientation){
+	 for (int row = 1; row < height; row++){
+                for (int column = start_col; column < stop_col; column++){
                         if (orientation[0] == 'v')
                                 energyArray[row][column] = computeEnergy(column, row, buffer);
                         else
@@ -438,16 +438,16 @@ int main(int argc, char **argv){
 		edgeTo = initializeEdges(height, width);
 		energyArray = initializeEnergyArray(height, width);
 		//Divide the work among the PEs
-		int row_per_pe = (height + npes - 1)/npes;
+		int col_per_pe = (width + npes - 1)/npes;
 	
-		int start_row = me * row_per_pe;
-		int stop_row = (me + 1)*row_per_pe; 
+		int start_col = me * col_per_pe;
+		int stop_col = (me + 1)*col_per_pe; 
 		
 		//Ensure the last PE does not go past the height
 		if (me == npes - 1)
-			stop_row = height;
+			stop_col = width;	
 
-		generateEnergyMatrix(start_row, stop_row, npes, width, orientation);
+		generateEnergyMatrix(start_col, stop_col, npes, height, orientation);
 		if (me == 0){
 			cout<<"Removing vertical seams"<<endl;
 		//	Seams Identification
@@ -468,22 +468,21 @@ int main(int argc, char **argv){
                 energyArray = initializeEnergyArray(width, height);
 		//cout << "After all initialization"<<endl;
                 //Divide the work among the PEs
-                int row_per_pe = (width + npes - 1)/npes;
+                int col_per_pe = (height + npes - 1)/npes;
 
-                int start_row = me * row_per_pe;
-                int stop_row = (me + 1)*row_per_pe;
+                int start_col = me * col_per_pe;
+                int stop_col = (me + 1)*col_per_pe;
 
                 //Ensure the last PE does not go past the height
                 if (me == npes - 1)
-                        stop_row = width;
-		//cout<<start_row<<"Stop row: "<<stop_row<<endl;
-		//cout << "Before generating energy"<<endl;
-                generateEnergyMatrix(start_row, stop_row, npes, height, orientation);
-                //cout << "After generating energy"<<endl;
+                        stop_col = height;
+	
+                generateEnergyMatrix(start_col, stop_col, npes, width, orientation);
+               
 		if (me == 0){
                         cout<<"Removing horizontal seams"<<endl;
-                        //Seams Identification
-                //cout<<"After generating energy"<<endl;
+                 //Seams Identification
+                
 		identifySeams(height, width);
                 verticalSeams =  backTrack(edgeTo, distTo, width, height);
 		buffer = transposeRGBuffer(buffer, width, height);
@@ -492,52 +491,7 @@ int main(int argc, char **argv){
                   carver = lqr_carver_new(transposeRGBuffer(carved_imageV, height,width), width, height, 3);
                 carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
 		}
-		/*verticalSeams = new int[width];
-		distTo = new double*[width];
-		edgeTo = new int*[width];
-
-		//Declare a dynamic 2D array to hold the energy values for all pixels
-		energyArray = new double*[width];
-		int num_threads = width/64;
-		pthread_t threads[num_threads];
-		struct ThreadData data[num_threads];
-		int row_per_thread = (width + num_threads - 1)/num_threads;
-		//Spawn up threads that will generate the energy matrix
-		for (int i = 0; i < num_threads;  i++){
-			data[i].start_row = i * row_per_thread;
-			data[i].stop_row = (i + 1)*row_per_thread;
-			data[i].num_rows = width;
-			data[i].num_cols = height;
-			data[i].thread_id = i;
-			data[i].thread_num = num_threads;
-			data[i].orientation = orientation;
-		}
-		data[0].start_row = 0;
-		data[num_threads-1].stop_row = width;
-		for (int i = 0; i <num_threads; i++){
-			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
-		}
-		for (int i = 0; i < num_threads; i++){
-			pthread_join(threads[i], NULL);
-		}
-
-		cout<<"Removing horizontal seams"<<endl;
-		identifySeams(height, width);
-		verticalSeams =  backTrack(edgeTo, distTo, width, height);
-
-		buffer = transposeRGBuffer(buffer, width, height);
-
-		for (int i = 0; i < num_threads; i++){
-			pthread_create(&threads[i], NULL, &carveSeams, (void*)&data[i]);
-		}
-
-		for (int i = 0;  i < num_threads; i++){
-			pthread_join(threads[i], NULL);
-		}
-
-		carver = lqr_carver_new(transposeRGBuffer(carved_imageV, height,width), width, height, 3);
-		carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);*/
-	}
+}
 
 	//Create a Carver object with the carved image buffer
 	if (me == 0){
