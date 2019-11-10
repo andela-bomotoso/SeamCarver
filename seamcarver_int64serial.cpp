@@ -11,13 +11,13 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/time.h>
-#include <iostream>
-#include <chrono>
+
+
 
 using namespace std;
 pngwriter pngwrt(1,1,0,"out_serial.png");
 int BASE_ENERGY = 1000;
-int ROWS_PER_THREAD = 32;
+int ROWS_PER_THREAD = 64;
 int width = 0;
 int height = 0;
 gfloat rigidity = 0;
@@ -29,6 +29,7 @@ guchar* buffer;
 int* verticalSeams;
 int** distTo;
 int** edgeTo;
+
 
 /*Copied from the liblqr example
  convert the image in the right format */
@@ -144,34 +145,34 @@ void generateEnergyMatrix(int width, int height, char* orientation){
                 energyArray[row][column] = computeEnergy(row, column, buffer);
         }
     }
+
 }
+
 
 
 /*Declare a relax function to optimize the computation of a 
 	shortest path energy values*/
 
 void relax(int row, int col, int** edgeTo, int** distTo, int width) {
+	int relax = 0;
         int nextRow = row + 1;
         for (int i = -1; i <= 1; i++) {
             int nextCol = col + i;
             if (nextCol < 0 || nextCol >= width)
                 continue;
-
-            if (distTo[nextRow][nextCol] > distTo[row][col] + energyArray[nextRow][nextCol]) {
-	               distTo[nextRow][nextCol] =  distTo[row][col] + energyArray[nextRow][nextCol];
+            if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]) {
+                distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
                 edgeTo[nextRow][nextCol] = i;
-		
+
             }
         }
     }
-
-
 
 int* backTrack(int** edgeTo, int** distTo, int height, int width){
 // Backtrack from the last row to get a shortest path
 	int* seams = new int[height];
         int minCol = 0;
-        double minDist = std::numeric_limits<int>::max();
+        double minDist = std::numeric_limits<double>::infinity();
         for (int col = 0; col < width; col++) {
             if (distTo[height - 1][col] < minDist) {
                 minDist = distTo[height - 1][col];
@@ -214,6 +215,8 @@ int * identifySeams( int width, int height){
 	for (int i = 0; i < height; i++)
 		edgeTo[i] = new int[width];
 
+
+
 	//Initialize distTo to maximum values
 	
         for (int row = 0; row < height; row++) {
@@ -230,6 +233,9 @@ int * identifySeams( int width, int height){
             }
         }
 }
+
+
+
 //Carve out the vertical seams
 guchar* carveVertically(int* vertical_seams, guchar* buffer, int width, int height){
 	guchar* carved_imageV;
@@ -321,6 +327,15 @@ LqrRetVal write_carver_to_image(LqrCarver *carver, pngwriter *pngwrt, char* orie
 	    return LQR_OK;
 }
 
+/* Get current time*/
+
+double timestamp()
+{
+    struct timeval tval;
+    
+    gettimeofday( &tval, ( struct timezone * ) 0 );
+    return ( tval.tv_sec + (tval.tv_usec / 1000000.0) );
+}
 
 int main(int argc, char **argv){
 	char * original_img = argv[1]; 
@@ -331,7 +346,9 @@ int main(int argc, char **argv){
 	height = pngwrt.getheight();
 
 	cout<<"Width: "<<width<<" Height: "<<height<<endl;
+	double begin, end;
 
+	begin = timestamp();
 	
 	int size = 3 * width * height;
     	buffer = g_try_new(guchar,size);
@@ -347,23 +364,19 @@ int main(int argc, char **argv){
 	 	verticalSeams = new int[height];
 		distTo = new int*[height];
 		edgeTo = new int*[height];
-	
 		//Declare a dynamic 2D array to hold the energy values for all pixels
 		energyArray = new int*[height];
 		for (int i = 0; i < height; i++)
-			energyArray[i] = new int[width];
+		energyArray[i] = new int[width];
 		generateEnergyMatrix(width, height, orientation);
-		
 		cout<<"Removing vertical seams"<<endl;
-		//Start the clock
-	        auto start_time = chrono::high_resolution_clock::now();
 		identifySeams(width, height);
 	
+		
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
-		//end time
-		auto end_time = chrono::high_resolution_clock::now();
-		cout << "Time Taken: "<<chrono::duration_cast<chrono::milliseconds>(end_time - start_time).count() << "ms"<<endl;
-		guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);                                                    
+	//	for (int i = 0; i < height; i++)
+	//		cout <<v_seams[i] <<endl;
+		guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
 		carved_seams = lqr_carver_new(seams, width, height, 3);
 	}
@@ -377,15 +390,9 @@ int main(int argc, char **argv){
 			energyArray[i] = new int[height];
 		generateEnergyMatrix(height, width, orientation);
 
-	cout<<"Removing horizontal seams"<<endl;
-		//Start the clock
-	        auto start_time = chrono::high_resolution_clock::now();
+		cout<<"Removing horizontal seams"<<endl;
 		identifySeams(height, width);
 		int* h_seams =  backTrack(edgeTo, distTo, width, height);
- for (int i = 0; i < width; i++)
- cout<<h_seams[i]<<endl;
-		auto end_time = chrono::high_resolution_clock::now();
-		cout << "Time Taken: "<<chrono::duration_cast<chrono::milliseconds>(end_time - start_time).count() << "ms"<<endl;
 		guchar* transBuffer = transposeRGBuffer(buffer, width, height);
 		guchar* carved_imageH = carveVertically(h_seams, transBuffer, height, width);
 		carver = lqr_carver_new(transposeRGBuffer(carved_imageH, height,width), width, height, 3);
@@ -398,6 +405,8 @@ int main(int argc, char **argv){
 	printSeams(carved_seams, &pngwrt);
 	lqr_carver_destroy(carver);
 	pngwrt.close();
+	end = timestamp();
+	printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
 	return 0;
 }
 
