@@ -348,7 +348,7 @@ int main(int argc, char **argv){
 	cout<<"Width: "<<width<<" Height: "<<height<<endl;
 	double begin, end;
 
-	begin = timestamp();
+	//begin = timestamp();
 	
 	int size = 3 * width * height;
     	buffer = g_try_new(guchar,size);
@@ -368,17 +368,23 @@ int main(int argc, char **argv){
 		energyArray = new int*[height];
 		for (int i = 0; i < height; i++)
 		energyArray[i] = new int[width];
-		generateEnergyMatrix(width, height, orientation);
-		cout<<"Removing vertical seams"<<endl;
-		identifySeams(width, height);
-	
 		
+		begin  = timestamp();
+		generateEnergyMatrix(width, height, orientation);
+		end = timestamp();
+		cout<<"Energy Computation Time: "<<(end-begin)<<endl;
+		//cout<<"Removing vertical seams"<<endl;
+		begin = timestamp();
+		identifySeams(width, height);
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
-	//	for (int i = 0; i < height; i++)
-	//		cout <<v_seams[i] <<endl;
+		end = timestamp();
+		cout<<"Seams Identification: "<<(end-begin)<<endl;
+		begin = timestamp();
 		guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
 		carved_seams = lqr_carver_new(seams, width, height, 3);
+		end = timestamp();
+		cout <<"Seams Removal: "<<(end -begin)<<endl;
 	}
 	else{
 		verticalSeams = new int[width];
