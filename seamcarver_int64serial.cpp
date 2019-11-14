@@ -172,7 +172,7 @@ int* backTrack(int** edgeTo, int** distTo, int height, int width){
 // Backtrack from the last row to get a shortest path
 	int* seams = new int[height];
         int minCol = 0;
-        double minDist = std::numeric_limits<double>::infinity();
+        int minDist = std::numeric_limits<int>::max();
         for (int col = 0; col < width; col++) {
             if (distTo[height - 1][col] < minDist) {
                 minDist = distTo[height - 1][col];
@@ -347,9 +347,6 @@ int main(int argc, char **argv){
 
 	cout<<"Width: "<<width<<" Height: "<<height<<endl;
 	double begin, end;
-
-	//begin = timestamp();
-	
 	int size = 3 * width * height;
     	buffer = g_try_new(guchar,size);
 	buffer = rgb_buffer_from_image(&pngwrt);
@@ -361,32 +358,29 @@ int main(int argc, char **argv){
 	LqrCarver *carved_seams;
 	//Check the orientation to determine how to carve
 	if(orientation[0] == 'v'){
+		
+		begin = timestamp();
 	 	verticalSeams = new int[height];
 		distTo = new int*[height];
 		edgeTo = new int*[height];
 		//Declare a dynamic 2D array to hold the energy values for all pixels
 		energyArray = new int*[height];
 		for (int i = 0; i < height; i++)
-		energyArray[i] = new int[width];
-		
-		begin  = timestamp();
+		energyArray[i] = new int[width];	
+	
 		generateEnergyMatrix(width, height, orientation);
-		end = timestamp();
-		cout<<"Energy Computation Time: "<<(end-begin)<<endl;
-		//cout<<"Removing vertical seams"<<endl;
-		begin = timestamp();
-		identifySeams(width, height);
+		
+		identifySeams(width, height);	
+		cout<<"Removing vertical seams"<<endl;
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
-		end = timestamp();
-		cout<<"Seams Identification: "<<(end-begin)<<endl;
-		begin = timestamp();
 		guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
 		carved_seams = lqr_carver_new(seams, width, height, 3);
 		end = timestamp();
-		cout <<"Seams Removal: "<<(end -begin)<<endl;
+		cout<<"Total Seam Carving Time: "<<(end-begin)<<endl; 
 	}
 	else{
+		begin = timestamp();
 		verticalSeams = new int[width];
 		distTo = new int*[width];
 		edgeTo = new int*[width];
@@ -403,6 +397,8 @@ int main(int argc, char **argv){
 		guchar* carved_imageH = carveVertically(h_seams, transBuffer, height, width);
 		carver = lqr_carver_new(transposeRGBuffer(carved_imageH, height,width), width, height, 3);
 		carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
+		 end = timestamp();
+                 cout<<"Total Seam Carving Time: "<<(end-begin)<<endl;
 	}
 
 	//Create a Carver object with the carved image buffer
@@ -411,8 +407,8 @@ int main(int argc, char **argv){
 	printSeams(carved_seams, &pngwrt);
 	lqr_carver_destroy(carver);
 	pngwrt.close();
-	end = timestamp();
-	printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
+	//end = timestamp();
+	//printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
 	return 0;
 }
 
