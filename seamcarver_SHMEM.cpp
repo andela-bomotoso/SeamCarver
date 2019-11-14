@@ -23,11 +23,11 @@ int height = 0;
 gfloat rigidity = 0;
 gint max_step = 1;
 int channels = 3;
-double** energyArray;
+int** energyArray;
 guchar* seams;
 guchar* buffer;
 int* verticalSeams;
-double** distTo;
+int** distTo;
 int** edgeTo;
 guchar* carved_imageV;
 pthread_barrier_t barr;
@@ -43,19 +43,18 @@ struct ThreadData {
 	char* orientation;
 };
 
-double** initializeEnergyArray(int rows, int columns){
-	double** energyArray;
-	energyArray = (double**) shmem_malloc(rows*sizeof(double*));
+int** initializeEnergyArray(int rows, int columns){
+	int** energyArray;
+	energyArray = (int**) shmem_malloc(rows*sizeof(int*));
 	for (int i = 0; i < rows; i++)
-		energyArray[i] = (double*) shmem_malloc(columns*sizeof(double));
+		energyArray[i] = (int*) shmem_malloc(columns*sizeof(int));	
 	return energyArray;
 }
-
-double** initializeDistances(int rows, int columns)	{
-	double** distTo;
-	distTo = (double**) shmem_malloc(rows*sizeof(double*));
+int** initializeDistances(int rows, int columns)	{
+	int** distTo;
+	distTo = (int**) shmem_malloc(rows*sizeof(int*));
 	for (int i = 0; i < rows; i++)
-		distTo[i] = (double*) shmem_malloc(columns*sizeof(double));
+		distTo[i] = (int*) shmem_malloc(columns*sizeof(int));
 	return distTo;
 }
 
@@ -99,7 +98,7 @@ guchar * rgb_buffer_from_image(pngwriter *png)
 	return buffer;
 }
 
-double computeEnergy(int x, int y, guchar* buffer){
+int computeEnergy(int x, int y, guchar* buffer){
 	if (x == 0 || y == 0 || (x == width - 1) || (y == height- 1))
 		return BASE_ENERGY;
 
@@ -167,7 +166,7 @@ double computeEnergy(int x, int y, guchar* buffer){
 	valueSum = valueV + valueH;
 
 	//Return the squareroot of the sum of differences
-	return sqrt(valueSum);
+	return round(sqrt(valueSum));
 }
 
 //Generate energyArray 
@@ -187,8 +186,7 @@ void generateEnergyMatrix(int width, int height, char* orientation){
 /*Declare a relax function to optimize the computation of a 
   shortest path energy values*/
 
-void relax(int row, int col, int** edgeTo, double** distTo, int width) {
-	int relax = 0;
+void relax(int row, int col, int** edgeTo, int** distTo, int width) {
 	int nextRow = row + 1;
 	for (int i = -1; i <= 1; i++) {
 		int nextCol = col + i;
@@ -201,8 +199,26 @@ void relax(int row, int col, int** edgeTo, double** distTo, int width) {
 	}
 }
 
+void p_relax(int row, int col, int** edgeTo, int** distTo, int width) {
+        int nextRow = row + 1;
+        for (int i = -1; i <= 1; i++) {
+                int nextCol = col + i;
+                if (nextCol < 0 || nextCol >= width)
+                        continue;
+		int new_val = shmem_int_atomic_fetch_add(&distTo[row][col], energyArray[nextRow][nextCol], 0);
+		int old_val = distTo[nextRow][nextCol];
+                if (old_val >= new_val) {
+			//Put the values in PE 0
+			shmem_int_p(&distTo[nextRow][nextCol], new_val, 0);
+			shmem_int_p(&edgeTo[nextRow][nextCol], i, 0);
+                        //distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
+                        //edgeTo[nextRow][nextCol] = i;
+                }
+        }
+}
+
 //Backtrack to identify seams which is the shortest path across the energy array
-int* backTrack(int** edgeTo, double** distTo, int height, int width){
+int* backTrack(int** edgeTo, int** distTo, int height, int width){
 	// Backtrack from the last row to get a shortest path
 	int* seams = new int[height];
 	int minCol = 0;
@@ -244,19 +260,45 @@ void generateEnergyMatrix(int start_col, int stop_col, int num_pes, int height, 
                                 energyArray[row][column] = computeEnergy(column, row, buffer);
                         else
                                 energyArray[row][column] = computeEnergy(row, column, buffer);
-			double current_val = energyArray[row][column];
-                        shmem_double_put(&energyArray[row][column], &current_val, 1, 0);
+			int current_val = energyArray[row][column];
+                        shmem_int_put(&energyArray[row][column], &current_val, 1, 0);
                 }
         }
 	shmem_barrier_all();
         if (num_pes > 1)
                 shmem_broadcast32(energyArray, energyArray, height * width, 0, 0, 0, num_pes, pSync);
 }
+
+void identifySeams(int start_col, int stop_col, int width, int height, int num_pes){
+
+        //Initialize distTo to maximum values
+
+        for (int row = 0; row < height; row++) {
+                for (int col = 0; col < width; col++) {
+                        if (row == 0)
+                                distTo[row][col] = BASE_ENERGY;
+                        else
+                                 distTo[row][col] = std::numeric_limits<int>::max();
+                }
+        }
+         for (int row = 0; row < height - 1; row++) {
+                for (int col = start_col; col < stop_col; col++) {
+                        p_relax(row, col, edgeTo, distTo, width);
+                }
+		
+		//All PEs wait here before moving to the next row
+		shmem_barrier_all();
+		if(num_pes > 1){
+			shmem_broadcast32(distTo, distTo, height * width, 0, 0, 0, num_pes, pSync);
+			shmem_broadcast32(edgeTo, edgeTo, height * width, 0, 0, 0, num_pes, pSync);
+		}
+        }
+}
 //Identify the seams in an image
-int* identifySeams( int width, int height){
+void identifySeams( int width, int height){
 
 	for (int i = 0; i < height; i++)
-		distTo[i] = new double[width];
+		distTo[i] = new int[width];
 
 	//Declare an array to hold the paths taken to reach a pixel
 	for (int i = 0; i < height; i++)
@@ -267,12 +309,19 @@ int* identifySeams( int width, int height){
 	for (int row = 0; row < height; row++) {
 		for (int col = 0; col < width; col++) {
 			if (row == 0)
-				distTo[row][col] = BASE_ENERGY;                                                              else                                                                                                         distTo[row][col] = std::numeric_limits<double>::infinity();
+				distTo[row][col] = BASE_ENERGY;  
+		 	else                                                                                                        
+				 distTo[row][col] = std::numeric_limits<int>::max();
 		}
-	}                                                                                                    for (int row = 0; row < height - 1; row++) {
-		for (int col = 0; col < width; col++) {
-			relax(row, col, edgeTo, distTo, width);                                                      }                                                                                            }
-}                                                                                 //Carve out the seams from the image               
+	}                                                                                                   
+	 for (int row = 0; row < height - 1; row++) {
+		for (int col = 0; col < width; col++) {                                                                                                       	         
+			 relax(row, col, edgeTo, distTo, width);	
+		}                                       
+	}                                                                           
+}
+ 
+//Carve out the seams from the image               
 guchar* carveSeams(int start_row, int stop_row)	{
 	for (int row = 0; row < height; row++){
                 //Get the RGB value before the seam
@@ -446,16 +495,20 @@ int main(int argc, char **argv){
 		//Ensure the last PE does not go past the height
 		if (me == npes - 1)
 			stop_col = width;	
-
+		begin = timestamp();
 		generateEnergyMatrix(start_col, stop_col, npes, height, orientation);
-		if (me == 0){
-			cout<<"Removing vertical seams"<<endl;
-		//	Seams Identification
-			identifySeams(width, height);
+		end = timestamp();
+		shmem_barrier_all();	
+		cout<<"Total EC Time: "<<(end - begin)<<endl;
+
+		//identify seams
+		identifySeams(start_col, stop_col, width, height, npes);
+                shmem_barrier_all();
+
+		if(me == 0){
 			verticalSeams =  backTrack(edgeTo, distTo, height, width);
 		//Carve out the identified seams
 		guchar* carved_imageV = carveSeams(verticalSeams,buffer, width, height);
-		cout<<"After carving seams out "<<endl;
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
 		carved_seams = lqr_carver_new(seams, width, height, 3);
 	}
@@ -476,14 +529,22 @@ int main(int argc, char **argv){
                 //Ensure the last PE does not go past the height
                 if (me == npes - 1)
                         stop_col = height;
-	
+		
+		begin = timestamp();
                 generateEnergyMatrix(start_col, stop_col, npes, width, orientation);
-               
-		if (me == 0){
-                        cout<<"Removing horizontal seams"<<endl;
+                end = timestamp();
+		cout<<"EC Time: "<<(end - begin) <<endl;
+		
                  //Seams Identification
+                identifySeams(start_col, stop_col, height, width, npes); /*This does not work*/
+		//identifySeams(height,width)  *This is the serial version of seams identfication*
+                shmem_barrier_all();
+
+		//Seams Removal
+		if (me == 0){
+                     //   cout<<"Removing horizontal seams"<<endl;
                 
-		identifySeams(height, width);
+		//identifySeams(height, width);
                 verticalSeams =  backTrack(edgeTo, distTo, width, height);
 		buffer = transposeRGBuffer(buffer, width, height);
                 //carve out the identified seams
@@ -500,8 +561,8 @@ int main(int argc, char **argv){
 		printSeams(carved_seams, &pngwrt);
 		lqr_carver_destroy(carver);
 		pngwrt.close();
-		double end = timestamp();
-		printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
+		//double end = timestamp();
+		//printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
 	}
 	shmem_finalize();
 	return 0;

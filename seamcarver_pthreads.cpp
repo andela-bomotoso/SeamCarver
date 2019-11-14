@@ -16,7 +16,7 @@
 using namespace std;
 pngwriter pngwrt(1,1,0,"out_pthreads.png");
 const int BASE_ENERGY = 1000;
-const int NUM_OF_THREADS = 8;
+const int NUM_OF_THREADS = 4;
 int width;
 int height;
 gfloat rigidity = 0;
@@ -26,7 +26,7 @@ double** energyArray;
 guchar* seams;
 guchar* buffer;
 int* verticalSeams;
-double** distTo;
+int** distTo;
 int** edgeTo;
 guchar* carved_imageV;
 pthread_barrier_t mybarrier;
@@ -140,7 +140,7 @@ double computeEnergy(int x, int y, guchar* buffer){
 	valueSum = valueV + valueH;
 
 	//Return the squareroot of the sum of differences
-	return sqrt(valueSum);
+	return round(sqrt(valueSum));
 }
 
 //Generate energyArray 
@@ -160,7 +160,7 @@ void generateEnergyMatrix(int width, int height, char* orientation){
 /*Declare a relax function to optimize the computation of a 
   shortest path energy values*/
 
-void relax(int row, int col, int** edgeTo, double** distTo, int width) {
+void relax(int row, int col, int** edgeTo, int** distTo, int width) {
 	int relax = 0;
 	int nextRow = row + 1;
 	for (int i = -1; i <= 1; i++) {
@@ -175,11 +175,11 @@ void relax(int row, int col, int** edgeTo, double** distTo, int width) {
 }
 
 //Backtrack to identify seams which is the shortest path across the energy array
-int* backTrack(int** edgeTo, double** distTo, int height, int width){
+int* backTrack(int** edgeTo, int** distTo, int height, int width){
 	// Backtrack from the last row to get a shortest path
 	int* seams = new int[height];
 	int minCol = 0;
-	double minDist = std::numeric_limits<double>::infinity();
+	int minDist = std::numeric_limits<int>::max();
 	for (int col = 0; col < width; col++) {
 		if (distTo[height - 1][col] < minDist) {
 			minDist = distTo[height - 1][col];
@@ -239,14 +239,13 @@ void *identifySeams(void *arguments){
 	int start_col = data -> start_col;
 	int stop_col = data -> stop_col;
 	char* orientation =data -> orientation;
-	//cout << start_col<<":"<<stop_col<<" width: "<<num_cols<<" height:"<<num_rows<<endl;
-	//cout << "Height: "<<num_rows << "Width: "<<num_cols<<endl;
+
 	for (int row = 0; row < num_rows; row++){
 		for (int col = start_col; col < stop_col; col++){	
 			if (row == 0)
 				distTo[row][col] = BASE_ENERGY;
 			else
-				distTo[row][col] = std::numeric_limits<double>::infinity();
+				distTo[row][col] = std::numeric_limits<int>::max();
 		}
 	}
         for (int row = 0; row < num_rows-1; row++){
@@ -267,7 +266,7 @@ int * identifySeams( int width, int height){
 			if (row == 0)
 				distTo[row][col] = BASE_ENERGY;
                         else
-                      		 distTo[row][col] = std::numeric_limits<double>::infinity();
+                      		 distTo[row][col] = std::numeric_limits<int>::infinity();
 		}
 	} 
 
@@ -388,7 +387,7 @@ int main(int argc, char **argv){
 	cout<<"Width: "<<width<<" Height: "<<height<<endl;
 	double begin, end;
 
-	begin = timestamp();	
+	//begin = timestamp();	
 	int size = 3 * width * height;
 	buffer = g_try_new(guchar,size);
 	buffer = rgb_buffer_from_image(&pngwrt);
@@ -405,13 +404,14 @@ int main(int argc, char **argv){
 	//Check the orientation to determine how to carve
 	//Vertical Orientation
 	if(orientation[0] == 'v'){
+		begin = timestamp();
 		verticalSeams = new int[height];
-		distTo = new double*[height];
+		distTo = new int*[height];
 		edgeTo = new int*[height];
 	//	Declare a dynamic 2D array to hold the energy values for all pixels
 		energyArray = new double*[height];
 		 for (int i = 0; i < height; i++)
-                	distTo[i] = new double[width];
+                	distTo[i] = new int[width];
         	for (int i = 0; i < height; i++)
                 	edgeTo[i] = new int[width];
 		//Spawn up threads to generate the energy matrix for (int i = 0;  i < num_threads; i+ 
@@ -434,25 +434,26 @@ int main(int argc, char **argv){
 		}
 		data[0].start_col = 0;
 		data[NUM_OF_THREADS-1].stop_col = width;
-
+               
 		for (int i = 0; i < NUM_OF_THREADS; i++){
 			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
 		}
-	
-		cout<<"Removing vertical seams"<<endl;
-
 		for (int i = 0;  i < NUM_OF_THREADS; i++){
 			pthread_join(threads[i], NULL);
 		}
-
+		
+	
+		cout<<"Removing vertical seams"<<endl;
+		begin = timestamp();
 		for (int i = 0; i < NUM_OF_THREADS; i++){
 			pthread_create(&threads[i], NULL, &identifySeams, (void*)&data[i]);
 		}
 		for (int i = 0; i < NUM_OF_THREADS; i++){
 			pthread_join(threads[i], NULL);
 		}
-		
+			
 		verticalSeams =  backTrack(edgeTo, distTo, height, width);
+		end = timestamp();
 		for (int i = 0; i < NUM_OF_THREADS; i++){
 			pthread_create(&threads[i], NULL, &carveSeams, (void*)&data[i]);
 		}
@@ -463,18 +464,22 @@ int main(int argc, char **argv){
 
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
 		carved_seams = lqr_carver_new(seams, width, height, 3);
+		end = timestamp();
+		cout<<"Total SeamCarving Time: "<<(end - begin)<<endl;
+		
 	}
 	//Horizontal Seams
-	else{
+	else{   
+		begin = timestamp();
 		verticalSeams = new int[width];
-		distTo = new double*[width];
+		distTo = new int*[width];
 		edgeTo = new int*[width];
 
 		//Declare a dynamic 2D array to hold the energy values for all pixels
 		energyArray = new double*[width];
 
 		for (int i = 0; i < width; i++)
-                        distTo[i] = new double[height];
+                        distTo[i] = new int[height];
                 for (int i = 0; i < width; i++)
                         edgeTo[i] = new int[height];
 
@@ -527,6 +532,8 @@ int main(int argc, char **argv){
 
 		carver = lqr_carver_new(transposeRGBuffer(carved_imageV, height,width), width, height, 3);
 		carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
+		end = timestamp();
+		cout<<"Total SeamCarving Time: "<<(end - begin)<<endl;
 	}
 
 	//Create a Carver object with the carved image buffer
@@ -535,8 +542,8 @@ int main(int argc, char **argv){
 	printSeams(carved_seams, &pngwrt);
 	lqr_carver_destroy(carver);
 	pngwrt.close();
-	end = timestamp();
-	printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
+	//end = timestamp();
+	//printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
 	pthread_barrier_destroy(&mybarrier);
 
 	return 0;
