@@ -35,6 +35,8 @@ struct ThreadData {
 	int num_cols;
 	int start_col;
 	int stop_col;
+	int start_row;
+	int stop_row;
 	int thread_id;
 	int thread_num;
 	char* orientation;
@@ -283,9 +285,11 @@ void *carveSeams(void *arguments){
 	int height = data -> num_rows;
 	int width = data -> num_cols;
 	int start_col = data -> start_col;
+	int start_row = data -> start_row;
 	int stop_col = data -> stop_col;
+	int stop_row = data -> stop_row;
 
-	for (int row = 0; row < height; row++){
+	for (int row = start_row; row < stop_row; row++){
 		//Get the RGB value before the seam
 		for (int col = 0; col < verticalSeams[row]; col++){
 			for (int color = 0; color < 3; color++){
@@ -422,18 +426,21 @@ int main(int argc, char **argv){
 		struct ThreadData data[NUM_OF_THREADS];
 
 		int col_per_thread = (width + NUM_OF_THREADS - 1)/ NUM_OF_THREADS;
+		int row_per_thread = (height + NUM_OF_THREADS - 1)/ NUM_OF_THREADS;
 
 		for (int i = 0; i < NUM_OF_THREADS; i++)	{
 			data[i].start_col = i*col_per_thread;
+			data[i].start_row = i*row_per_thread;
 			data[i].stop_col = (i + 1)*col_per_thread;
+			data[i].stop_row = (i + 1)*row_per_thread;
 			data[i].num_rows = height;
 			data[i].num_cols = width;
 			data[i].thread_id = i;
 			data[i].thread_num = NUM_OF_THREADS;
 			data[i].orientation = orientation;
 		}
-		data[0].start_col = 0;
-		data[NUM_OF_THREADS-1].stop_col = width;
+		data[NUM_OF_THREADS - 1].stop_col = width;
+		data[NUM_OF_THREADS - 1].stop_row = height;
                
 		for (int i = 0; i < NUM_OF_THREADS; i++){
 			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
@@ -489,18 +496,22 @@ int main(int argc, char **argv){
 
 		struct ThreadData data[NUM_OF_THREADS];
 		int col_per_thread = (height + NUM_OF_THREADS - 1)/NUM_OF_THREADS;
+		int row_per_thread = (width + NUM_OF_THREADS - 1)/ NUM_OF_THREADS;
 		//Spawn up threads that will generate the energy matrix
 		for (int i = 0; i < NUM_OF_THREADS;  i++){
 			data[i].start_col = i * col_per_thread;
+			data[i].start_row = i * row_per_thread;
 			data[i].stop_col = (i + 1)*col_per_thread;
+			data[i].stop_row = (i + 1)*row_per_thread;
 			data[i].num_rows = width;
 			data[i].num_cols = height;
 			data[i].thread_id = i;
 			data[i].thread_num = NUM_OF_THREADS;
 			data[i].orientation = orientation;
 		}
-		data[0].start_col = 0;
-		data[NUM_OF_THREADS - 1].stop_col = height;
+	
+	      	data[NUM_OF_THREADS - 1].stop_col = height;
+		data[NUM_OF_THREADS - 1].stop_row = width;
 
 		for (int i = 0; i < NUM_OF_THREADS; i++){
 			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
