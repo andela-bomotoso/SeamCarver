@@ -338,6 +338,7 @@ double timestamp()
 }
 
 int main(int argc, char **argv){
+	double total_begin = timestamp();
 	char * original_img = argv[1]; 
 	char* orientation = argv[2];
 	
@@ -407,8 +408,8 @@ int main(int argc, char **argv){
 	printSeams(carved_seams, &pngwrt);
 	lqr_carver_destroy(carver);
 	pngwrt.close();
-	//end = timestamp();
-	//printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
+	double total_end = timestamp();
+	printf("%s%5.2f\n","Total Processing Time: ", (total_end-total_begin));
 	return 0;
 }
 

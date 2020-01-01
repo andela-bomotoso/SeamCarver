@@ -16,7 +16,7 @@
 using namespace std;
 pngwriter pngwrt(1,1,0,"out_pthreads.png");
 const int BASE_ENERGY = 1000;
-const int NUM_OF_THREADS = 4;
+const int NUM_OF_THREADS = 2;
 int width;
 int height;
 gfloat rigidity = 0;
@@ -280,7 +280,7 @@ int * identifySeams( int width, int height){
 	}	
 }    
  //Carve out the seams from the image               
-void *carveSeams(void *arguments){
+/*void *carveSeams(void *arguments){
 	struct ThreadData *data = (struct ThreadData*)arguments;
 	int height = data -> num_rows;
 	int width = data -> num_cols;
@@ -288,8 +288,9 @@ void *carveSeams(void *arguments){
 	int start_row = data -> start_row;
 	int stop_col = data -> stop_col;
 	int stop_row = data -> stop_row;
-
-	for (int row = start_row; row < stop_row; row++){
+*/
+void carveSeams(int width, int height){
+	for (int row = 0; row < height; row++){
 		//Get the RGB value before the seam
 		for (int col = 0; col < verticalSeams[row]; col++){
 			for (int color = 0; color < 3; color++){
@@ -311,7 +312,7 @@ void *carveSeams(void *arguments){
 		}
 	}
 
-	return carved_imageV;
+	//return carved_imageV;
 }
 LqrRetVal printSeams(LqrCarver *carver, pngwriter *pngwrt){
 
@@ -381,6 +382,8 @@ double timestamp()
 }
 
 int main(int argc, char **argv){
+	double total_begin = timestamp();
+
 	char * original_img = argv[1]; 
 	char* orientation = argv[2];
 
@@ -460,14 +463,15 @@ int main(int argc, char **argv){
 		}
 			
 		verticalSeams =  backTrack(edgeTo, distTo, height, width);
-		end = timestamp();
+		carveSeams(width, height);
+		/*end = timestamp();
 		for (int i = 0; i < NUM_OF_THREADS; i++){
 			pthread_create(&threads[i], NULL, &carveSeams, (void*)&data[i]);
 		}
 
 		for (int i = 0;  i < NUM_OF_THREADS; i++){
 			pthread_join(threads[i], NULL);
-		}
+		}*/
 
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
 		carved_seams = lqr_carver_new(seams, width, height, 3);
@@ -532,14 +536,14 @@ int main(int argc, char **argv){
 		verticalSeams =  backTrack(edgeTo, distTo, width, height);
 
 		buffer = transposeRGBuffer(buffer, width, height);
-
-		for (int i = 0; i < NUM_OF_THREADS; i++){
+		carveSeams(height, width);
+		/*for (int i = 0; i < NUM_OF_THREADS; i++){
 			pthread_create(&threads[i], NULL, &carveSeams, (void*)&data[i]);
 		}
 
 		for (int i = 0;  i < NUM_OF_THREADS; i++){
 			pthread_join(threads[i], NULL);
-		}
+		}*/
 
 		carver = lqr_carver_new(transposeRGBuffer(carved_imageV, height,width), width, height, 3);
 		carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
@@ -553,8 +557,8 @@ int main(int argc, char **argv){
 	printSeams(carved_seams, &pngwrt);
 	lqr_carver_destroy(carver);
 	pngwrt.close();
-	//end = timestamp();
-	//printf("%s%5.2f\n","TOTAL TIME: ", (end-begin));
+	double total_end = timestamp();
+	printf("%s%5.2f\n","Total Processing Time: ", (total_end-total_begin));
 	pthread_barrier_destroy(&mybarrier);
 
 	return 0;
