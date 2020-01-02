@@ -448,23 +448,43 @@ int main(int argc, char **argv){
 	}
 	else{
 		verticalSeams = new int[width];
-		distTo = new int*[width];
-		edgeTo = new int*[width];
+	//	distTo = new int*[width];
+	//	edgeTo = new int*[width];
 		//Declare a dynamic 2D array to hold the energy values for all pixels
-		energyArray = new int*[width];
-		for (int i = 0; i < width; i++)
-			energyArray[i] = new int[height];
+		//energyArray = new int*[width];
+		//for (int i = 0; i < width; i++)
+		//	energyArray[i] = new int[height];
 		//generateEnergyMatrix(height, width, orientation);
 		// generateEnergyMatrix(height, start_row, stop_row, orientation); 
-		cout<<"Removing horizontal seams"<<endl;
+		
+		energyArray = initializeEnergyArray(width, height);
+		
+		int row_per_pe = (width + npes - 1)/npes;
+
+		int start_row = me*row_per_pe;
+		int stop_row = (me + 1)*row_per_pe;
+		
+		if (me == npes - 1)
+			stop_row = width - 1;
+
+		generateEnergyMatrix(height, start_row, stop_row, orientation);
+		shmem_barrier_all();
+
+		if (me == 0)
+			cout<<"Removing horizontal seams"<<endl;
+	
 		identifySeams(height, width);
 		int* h_seams =  backTrack(edgeTo, distTo, width, height);
-		guchar* transBuffer = transposeRGBuffer(buffer, width, height);
-		guchar* carved_imageH = carveVertically(h_seams, transBuffer, height, width);
-		carver = lqr_carver_new(transposeRGBuffer(carved_imageH, height,width), width, height, 3);
-		carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
+
+		if (me == 0){
+			guchar* transBuffer = transposeRGBuffer(buffer, width, height);
+			guchar* carved_imageH = carveVertically(h_seams, transBuffer, height, width);
+			carver = lqr_carver_new(transposeRGBuffer(carved_imageH, height,width), width, height, 3);
+			carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
+		 
 		 end = timestamp();
                  cout<<"Total Seam Carving Time: "<<(end-begin)<<endl;
+		}
 	}
 
 	//Create a Carver object with the carved image buffer
