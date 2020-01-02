@@ -16,7 +16,6 @@
 using namespace std;
 pngwriter pngwrt(1,1,0,"out_pthreads.png");
 const int BASE_ENERGY = 1000;
-const int NUM_OF_THREADS = 2;
 int width;
 int height;
 gfloat rigidity = 0;
@@ -386,6 +385,7 @@ int main(int argc, char **argv){
 
 	char * original_img = argv[1]; 
 	char* orientation = argv[2];
+	int num_threads = atoi(argv[3]);
 
 	pngwrt.readfromfile(original_img);
 	width = pngwrt.getwidth();
@@ -422,16 +422,16 @@ int main(int argc, char **argv){
         	for (int i = 0; i < height; i++)
                 	edgeTo[i] = new int[width];
 		//Spawn up threads to generate the energy matrix for (int i = 0;  i < num_threads; i+ 
-		pthread_barrier_init(&mybarrier, NULL, NUM_OF_THREADS);
+		pthread_barrier_init(&mybarrier, NULL, num_threads);
 
-		pthread_t threads[NUM_OF_THREADS];
+		pthread_t threads[num_threads];
 		
-		struct ThreadData data[NUM_OF_THREADS];
+		struct ThreadData data[num_threads];
 
-		int col_per_thread = (width + NUM_OF_THREADS - 1)/ NUM_OF_THREADS;
-		int row_per_thread = (height + NUM_OF_THREADS - 1)/ NUM_OF_THREADS;
+		int col_per_thread = (width + num_threads - 1)/ num_threads;
+		int row_per_thread = (height + num_threads - 1)/num_threads;
 
-		for (int i = 0; i < NUM_OF_THREADS; i++)	{
+		for (int i = 0; i < num_threads; i++)	{
 			data[i].start_col = i*col_per_thread;
 			data[i].start_row = i*row_per_thread;
 			data[i].stop_col = (i + 1)*col_per_thread;
@@ -439,26 +439,26 @@ int main(int argc, char **argv){
 			data[i].num_rows = height;
 			data[i].num_cols = width;
 			data[i].thread_id = i;
-			data[i].thread_num = NUM_OF_THREADS;
+			data[i].thread_num = num_threads;
 			data[i].orientation = orientation;
 		}
-		data[NUM_OF_THREADS - 1].stop_col = width;
-		data[NUM_OF_THREADS - 1].stop_row = height;
+		data[num_threads - 1].stop_col = width;
+		data[num_threads - 1].stop_row = height;
                
-		for (int i = 0; i < NUM_OF_THREADS; i++){
+		for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
 		}
-		for (int i = 0;  i < NUM_OF_THREADS; i++){
+		for (int i = 0;  i < num_threads; i++){
 			pthread_join(threads[i], NULL);
 		}
 		
 	
 		cout<<"Removing vertical seams"<<endl;
 		begin = timestamp();
-		for (int i = 0; i < NUM_OF_THREADS; i++){
+		for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &identifySeams, (void*)&data[i]);
 		}
-		for (int i = 0; i < NUM_OF_THREADS; i++){
+		for (int i = 0; i < num_threads; i++){
 			pthread_join(threads[i], NULL);
 		}
 			
@@ -494,15 +494,15 @@ int main(int argc, char **argv){
                 for (int i = 0; i < width; i++)
                         edgeTo[i] = new int[height];
 
-		  pthread_t threads[NUM_OF_THREADS];
+		  pthread_t threads[num_threads];
 
-		  pthread_barrier_init(&mybarrier, NULL, NUM_OF_THREADS );
+		  pthread_barrier_init(&mybarrier, NULL, num_threads );
 
-		struct ThreadData data[NUM_OF_THREADS];
-		int col_per_thread = (height + NUM_OF_THREADS - 1)/NUM_OF_THREADS;
-		int row_per_thread = (width + NUM_OF_THREADS - 1)/ NUM_OF_THREADS;
+		struct ThreadData data[num_threads];
+		int col_per_thread = (height + num_threads - 1)/num_threads;
+		int row_per_thread = (width + num_threads - 1)/ num_threads;
 		//Spawn up threads that will generate the energy matrix
-		for (int i = 0; i < NUM_OF_THREADS;  i++){
+		for (int i = 0; i < num_threads;  i++){
 			data[i].start_col = i * col_per_thread;
 			data[i].start_row = i * row_per_thread;
 			data[i].stop_col = (i + 1)*col_per_thread;
@@ -510,27 +510,27 @@ int main(int argc, char **argv){
 			data[i].num_rows = width;
 			data[i].num_cols = height;
 			data[i].thread_id = i;
-			data[i].thread_num = NUM_OF_THREADS;
+			data[i].thread_num = num_threads;
 			data[i].orientation = orientation;
 		}
 	
-	      	data[NUM_OF_THREADS - 1].stop_col = height;
-		data[NUM_OF_THREADS - 1].stop_row = width;
+	      	data[num_threads - 1].stop_col = height;
+		data[num_threads - 1].stop_row = width;
 
-		for (int i = 0; i < NUM_OF_THREADS; i++){
+		for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
 		}
 	
-		for (int i = 0; i < NUM_OF_THREADS; i++){
+		for (int i = 0; i < num_threads; i++){
 			pthread_join(threads[i], NULL);
 		}
 
 		cout<<"Removing horizontal seams"<<endl;
 
-		for (int i = 0; i < NUM_OF_THREADS; i++){
+		for (int i = 0; i < num_threads; i++){
                          pthread_create(&threads[i], NULL, &identifySeams, (void*)&data[i]);
                  }
-                 for (int i = 0; i < NUM_OF_THREADS; i++){
+                 for (int i = 0; i < num_threads; i++){
                          pthread_join(threads[i], NULL);
                  }
 		verticalSeams =  backTrack(edgeTo, distTo, width, height);
