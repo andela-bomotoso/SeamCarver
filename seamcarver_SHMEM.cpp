@@ -372,6 +372,7 @@ double timestamp()
 }
 
 int main(int argc, char **argv){
+
 	shmem_init();
 	int me = shmem_my_pe();
 	int npes = shmem_n_pes();
@@ -381,6 +382,8 @@ int main(int argc, char **argv){
 	char * original_img = argv[1]; 
 	char* orientation = argv[2];
 	
+	/*read the image and get the dimension*/
+
 	pngwrt.readfromfile(original_img);
 	width = pngwrt.getwidth();
 	height = pngwrt.getheight();
@@ -391,6 +394,7 @@ int main(int argc, char **argv){
 
         if (me == 0)
 		cout<<"Width: "<<width<<" Height: "<<height<<endl;
+
 	double begin, end;
 
 	int size = 3 * width * height;
@@ -405,38 +409,36 @@ int main(int argc, char **argv){
 	//Check the orientation to determine how to carve
 	begin = timestamp();
 	if(orientation[0] == 'v'){
-	 	
+	
 		verticalSeams = new int[height];
-		//distTo = new int*[height];
-		//edgeTo = new int*[height];
-		//Declare a dynamic 2D array to hold the energy values for all pixels
-		/*energyArray = new int*[height];
-		for (int i = 0; i < height; i++)
-		energyArray[i] = new int[width];	*/
 
+		//initialize energy array
 		energyArray = initializeEnergyArray(height, width);
 		
+		/*Divide the work among the available PEs*/
 		int row_per_pe = (height+ npes - 1)/npes;
-
-		//Divide the work among the available PEs
 		int start_row = me*row_per_pe;
 		int stop_row = (me + 1)*row_per_pe;
 
 		/*Ensure that the last pe does not exceed the last row*/
-	
 		if (me == npes - 1)
 			stop_row  = height - 1;
-	//	cout<<"PE: "<<me<<" "<<start_row<<"-"<<stop_row<<endl;
-		//generateEnergyMatrix(width, height, orientation);
+		
+		//Fill the energy matrix with the energy values of each pixel
 		generateEnergyMatrix(width, start_row, stop_row, orientation);
 		shmem_barrier_all();
 	
 		if (me  == 0)
 			cout<<"Removing vertical seams"<<endl;
-		identifySeams(width, height);
 		
+		//Find the vertical seam in the image
+		identifySeams(width, height);
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
-		//PE 0 will remove the identified seams
+
+		/*PE 0 will remove the identified seams
+		  there is no need to parallelize this process
+		  no significant speedup is attained with its parallelizations*/
+
 		if (me == 0){
 			guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
 			carver = lqr_carver_new(carved_imageV, width, height, 3);
@@ -448,34 +450,31 @@ int main(int argc, char **argv){
 	}
 	else{
 		verticalSeams = new int[width];
-	//	distTo = new int*[width];
-	//	edgeTo = new int*[width];
-		//Declare a dynamic 2D array to hold the energy values for all pixels
-		//energyArray = new int*[width];
-		//for (int i = 0; i < width; i++)
-		//	energyArray[i] = new int[height];
-		//generateEnergyMatrix(height, width, orientation);
-		// generateEnergyMatrix(height, start_row, stop_row, orientation); 
-		
+
+		//initialize  energy array	
 		energyArray = initializeEnergyArray(width, height);
 		
+		/*divide the work among the available PEs*/
 		int row_per_pe = (width + npes - 1)/npes;
-
 		int start_row = me*row_per_pe;
 		int stop_row = (me + 1)*row_per_pe;
 		
+		/*Ensure the last PE does not exceed the last row*/
 		if (me == npes - 1)
 			stop_row = width - 1;
-
+		
+		/*Compute energy values*/
 		generateEnergyMatrix(height, start_row, stop_row, orientation);
 		shmem_barrier_all();
 
 		if (me == 0)
 			cout<<"Removing horizontal seams"<<endl;
-	
+		
+		/*Find the horizontal seams in the image*/
 		identifySeams(height, width);
 		int* h_seams =  backTrack(edgeTo, distTo, width, height);
-
+		
+		/*Revomed the identified horizontal seams*/
 		if (me == 0){
 			guchar* transBuffer = transposeRGBuffer(buffer, width, height);
 			guchar* carved_imageH = carveVertically(h_seams, transBuffer, height, width);
