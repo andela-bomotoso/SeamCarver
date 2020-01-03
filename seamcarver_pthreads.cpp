@@ -34,8 +34,6 @@ struct ThreadData {
 	int num_cols;
 	int start_col;
 	int stop_col;
-	int start_row;
-	int stop_row;
 	int thread_id;
 	int thread_num;
 	char* orientation;
@@ -429,13 +427,10 @@ int main(int argc, char **argv){
 		struct ThreadData data[num_threads];
 
 		int col_per_thread = (width + num_threads - 1)/ num_threads;
-		int row_per_thread = (height + num_threads - 1)/num_threads;
 
 		for (int i = 0; i < num_threads; i++)	{
 			data[i].start_col = i*col_per_thread;
-			data[i].start_row = i*row_per_thread;
 			data[i].stop_col = (i + 1)*col_per_thread;
-			data[i].stop_row = (i + 1)*row_per_thread;
 			data[i].num_rows = height;
 			data[i].num_cols = width;
 			data[i].thread_id = i;
@@ -443,7 +438,6 @@ int main(int argc, char **argv){
 			data[i].orientation = orientation;
 		}
 		data[num_threads - 1].stop_col = width;
-		data[num_threads - 1].stop_row = height;
                
 		for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
@@ -500,13 +494,10 @@ int main(int argc, char **argv){
 
 		struct ThreadData data[num_threads];
 		int col_per_thread = (height + num_threads - 1)/num_threads;
-		int row_per_thread = (width + num_threads - 1)/ num_threads;
 		//Spawn up threads that will generate the energy matrix
 		for (int i = 0; i < num_threads;  i++){
 			data[i].start_col = i * col_per_thread;
-			data[i].start_row = i * row_per_thread;
 			data[i].stop_col = (i + 1)*col_per_thread;
-			data[i].stop_row = (i + 1)*row_per_thread;
 			data[i].num_rows = width;
 			data[i].num_cols = height;
 			data[i].thread_id = i;
@@ -515,7 +506,6 @@ int main(int argc, char **argv){
 		}
 	
 	      	data[num_threads - 1].stop_col = height;
-		data[num_threads - 1].stop_row = width;
 
 		for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);

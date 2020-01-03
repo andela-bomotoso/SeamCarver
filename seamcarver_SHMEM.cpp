@@ -174,9 +174,9 @@ int** initializeDistTo(int rows, int columns){
 
 }*/
 
-void generateEnergyMatrix(int width, int start_row, int stop_row, char* orientation){
-    for (int row = start_row; row <= stop_row; row++)    {
-                for(int column= 0; column < width; column++)    {
+void generateEnergyMatrix(int height, int start_col, int stop_col, char* orientation){
+    for (int row = 1; row < height; row++)    {
+                for(int column = start_col; column < stop_col; column++)    {
                         if (orientation[0] == 'v')
                                  energyArray[row][column] = computeEnergy(column, row, buffer);
                         else
@@ -416,16 +416,16 @@ int main(int argc, char **argv){
 		energyArray = initializeEnergyArray(height, width);
 		
 		/*Divide the work among the available PEs*/
-		int row_per_pe = (height+ npes - 1)/npes;
-		int start_row = me*row_per_pe;
-		int stop_row = (me + 1)*row_per_pe;
+		int col_per_pe = (width + npes - 1)/npes;
+		int start_col = me * col_per_pe;
+		int stop_col = (me + 1) * col_per_pe;
 
 		/*Ensure that the last pe does not exceed the last row*/
 		if (me == npes - 1)
-			stop_row  = height - 1;
+			stop_col  = width;
 		
 		//Fill the energy matrix with the energy values of each pixel
-		generateEnergyMatrix(width, start_row, stop_row, orientation);
+		generateEnergyMatrix(height, start_col, stop_col, orientation);
 		shmem_barrier_all();
 	
 		if (me  == 0)
@@ -455,16 +455,16 @@ int main(int argc, char **argv){
 		energyArray = initializeEnergyArray(width, height);
 		
 		/*divide the work among the available PEs*/
-		int row_per_pe = (width + npes - 1)/npes;
-		int start_row = me*row_per_pe;
-		int stop_row = (me + 1)*row_per_pe;
+		int col_per_pe = (height + npes - 1)/npes;
+		int start_col = me * col_per_pe;
+		int stop_col = (me + 1) * col_per_pe;
 		
 		/*Ensure the last PE does not exceed the last row*/
 		if (me == npes - 1)
-			stop_row = width - 1;
+			stop_col = height;
 		
 		/*Compute energy values*/
-		generateEnergyMatrix(height, start_row, stop_row, orientation);
+		generateEnergyMatrix(width, start_col, stop_col, orientation);
 		shmem_barrier_all();
 
 		if (me == 0)
