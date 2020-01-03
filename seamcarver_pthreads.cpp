@@ -257,25 +257,7 @@ void *identifySeams(void *arguments){
 	} 
 
 }
-int * identifySeams( int width, int height){
-	//Initialize distTo to maximum values
-
-	for (int row = 0; row < height; row++) {
-		for (int col = 0; col < width; col++) {
-			if (row == 0)
-				distTo[row][col] = BASE_ENERGY;
-                        else
-                      		 distTo[row][col] = std::numeric_limits<int>::infinity();
-		}
-	} 
-
-     for (int row = 0; row < height - 1; row++) {
-		for (int col = 0; col < width; col++) {
-			relax(row, col, edgeTo, distTo, width);                                                    
-  		}                                                                                            
-
-	}	
-}    
+  
  //Carve out the seams from the image               
 /*void *carveSeams(void *arguments){
 	struct ThreadData *data = (struct ThreadData*)arguments;

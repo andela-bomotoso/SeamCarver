@@ -29,7 +29,7 @@ guchar* buffer;
 int* verticalSeams;
 int** distTo;
 int** edgeTo;
-static long pSync[SHMEM_BARRIER_SYNC_SIZE];
+//static long pSync[SHMEM_BCAST_SYNC_SIZE];
 
 
 /*Copied from the liblqr example
@@ -174,8 +174,8 @@ int** initializeDistTo(int rows, int columns){
 
 }*/
 
-void generateEnergyMatrix(int height, int start_col, int stop_col, char* orientation){
-    for (int row = 1; row < height; row++)    {
+void generateEnergyMatrix(int num_rows, int start_col, int stop_col, int num_pes, char* orientation){
+    for (int row = 1; row < num_rows; row++)    {
                 for(int column = start_col; column < stop_col; column++)    {
                         if (orientation[0] == 'v')
                                  energyArray[row][column] = computeEnergy(column, row, buffer);
@@ -183,8 +183,13 @@ void generateEnergyMatrix(int height, int start_col, int stop_col, char* orienta
                                 energyArray[row][column] = computeEnergy(row, column, buffer);
 		//Put thr new value in PE 0
 		shmem_int_put(&energyArray[row][column], &energyArray[row][column], 1, 0);
+		shmem_quiet();
         }
     }
+	/*shmem_barrier_all();
+ 	if (num_pes > 1)
+       		 shmem_broadcast32(energyArray, energyArray, width*height, 0, 0, 0, num_pes, pSync);*/
+	
 }
                                                                                
 
@@ -372,6 +377,9 @@ double timestamp()
 }
 
 int main(int argc, char **argv){
+	static long pSync[SHMEM_BCAST_SYNC_SIZE];
+	 for (int i = 0; i < SHMEM_BCAST_SYNC_SIZE; i++)
+                pSync[i] = SHMEM_SYNC_VALUE;
 
 	shmem_init();
 	int me = shmem_my_pe();
@@ -387,12 +395,9 @@ int main(int argc, char **argv){
 	pngwrt.readfromfile(original_img);
 	width = pngwrt.getwidth();
 	height = pngwrt.getheight();
+	
 
- 	for (int i = 0; i < SHMEM_BARRIER_SYNC_SIZE; i++)
-                pSync[i] = SHMEM_SYNC_VALUE;
-        shmem_sync_all();
-
-        if (me == 0)
+        if (me == 1)
 		cout<<"Width: "<<width<<" Height: "<<height<<endl;
 
 	double begin, end;
@@ -425,8 +430,13 @@ int main(int argc, char **argv){
 			stop_col  = width;
 		
 		//Fill the energy matrix with the energy values of each pixel
-		generateEnergyMatrix(height, start_col, stop_col, orientation);
-		shmem_barrier_all();
+		generateEnergyMatrix(height, start_col, stop_col, npes, orientation);
+		
+		 shmem_barrier_all();
+
+       		 if (npes > 1)
+               		  shmem_broadcast64(energyArray, energyArray, width*height, 0, 0, 0, npes, pSync);
+
 	
 		if (me  == 0)
 			cout<<"Removing vertical seams"<<endl;
@@ -439,7 +449,7 @@ int main(int argc, char **argv){
 		  there is no need to parallelize this process
 		  no significant speedup is attained with its parallelizations*/
 
-		if (me == 0){
+		if (me == 1){
 			guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
 			carver = lqr_carver_new(carved_imageV, width, height, 3);
 			carved_seams = lqr_carver_new(seams, width, height, 3);
@@ -464,8 +474,13 @@ int main(int argc, char **argv){
 			stop_col = height;
 		
 		/*Compute energy values*/
-		generateEnergyMatrix(width, start_col, stop_col, orientation);
+		generateEnergyMatrix(width, start_col, stop_col, npes, orientation);
+		//shmem_barrier_all();
+		
 		shmem_barrier_all();
+
+                 if (npes > 1)
+                          shmem_broadcast64(energyArray, energyArray, width*height, 0, 0, 0, npes, pSync);
 
 		if (me == 0)
 			cout<<"Removing horizontal seams"<<endl;
@@ -474,8 +489,8 @@ int main(int argc, char **argv){
 		identifySeams(height, width);
 		int* h_seams =  backTrack(edgeTo, distTo, width, height);
 		
-		/*Revomed the identified horizontal seams*/
-		if (me == 0){
+		/*Revome the identified horizontal seams*/
+		if (me == 1){
 			guchar* transBuffer = transposeRGBuffer(buffer, width, height);
 			guchar* carved_imageH = carveVertically(h_seams, transBuffer, height, width);
 			carver = lqr_carver_new(transposeRGBuffer(carved_imageH, height,width), width, height, 3);
@@ -487,7 +502,7 @@ int main(int argc, char **argv){
 	}
 
 	//Create a Carver object with the carved image buffer
-   	if (me ==0){
+   	if (me == 1){
 		TRAP(lqr_carver_init(carver, max_step, rigidity));
 	//write_carver_to_image(carver, &pngwrt, orientation);
 		printSeams(carved_seams, &pngwrt);
