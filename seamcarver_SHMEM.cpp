@@ -449,7 +449,7 @@ int main(int argc, char **argv){
 		  there is no need to parallelize this process
 		  no significant speedup is attained with its parallelizations*/
 
-		if (me == 1){
+		if (me == 0){
 			guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
 			carver = lqr_carver_new(carved_imageV, width, height, 3);
 			carved_seams = lqr_carver_new(seams, width, height, 3);
@@ -490,7 +490,7 @@ int main(int argc, char **argv){
 		int* h_seams =  backTrack(edgeTo, distTo, width, height);
 		
 		/*Revome the identified horizontal seams*/
-		if (me == 1){
+		if (me == 0){
 			guchar* transBuffer = transposeRGBuffer(buffer, width, height);
 			guchar* carved_imageH = carveVertically(h_seams, transBuffer, height, width);
 			carver = lqr_carver_new(transposeRGBuffer(carved_imageH, height,width), width, height, 3);
@@ -502,7 +502,7 @@ int main(int argc, char **argv){
 	}
 
 	//Create a Carver object with the carved image buffer
-   	if (me == 1){
+   	if (me == 0){
 		TRAP(lqr_carver_init(carver, max_step, rigidity));
 	//write_carver_to_image(carver, &pngwrt, orientation);
 		printSeams(carved_seams, &pngwrt);
