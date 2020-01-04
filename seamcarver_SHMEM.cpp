@@ -259,8 +259,8 @@ int * identifySeams( int width, int height, int start_col, int stop_col, int npe
 		/*PE 0 broadcasts its new edges and distance values
 			so all PEs have up-to-date values*/
 		 if (npes > 1){
-                          shmem_broadcast64(distTo, distTo, width*height, 0, 0, 0, npes, pSync);
-			  shmem_broadcast64(edgeTo, edgeTo, width*height, 0, 0, 0, npes, pSync);
+                          shmem_broadcast64(&distTo[row][0], &distTo[row][0], width, 0, 0, 0, npes, pSync);
+			  shmem_broadcast64(&edgeTo[row][0], &edgeTo[row][0], width, 0, 0, 0, npes, pSync);
 		}
         }
 }
