@@ -29,7 +29,7 @@ guchar* buffer;
 int* verticalSeams;
 int** distTo;
 int** edgeTo;
-//static long pSync[SHMEM_BCAST_SYNC_SIZE];
+static long pSync[SHMEM_BCAST_SYNC_SIZE];
 
 
 /*Copied from the liblqr example
@@ -158,21 +158,18 @@ int** initializeDistTo(int rows, int columns){
         distTo = (int**) shmem_malloc(rows*sizeof(int*));
         for (int i = 0; i < rows; i++)
                 distTo[i] = (int*) shmem_malloc(columns*sizeof(int));
+	for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < columns; col++) {
+                if (row == 0)
+                    distTo[row][col] = BASE_ENERGY;
+                else
+                    distTo[row][col] = std::numeric_limits<int>::max();
+            }
+       }
+
         return distTo;
 }
 
-/*void generateEnergyMatrix(int width, int height, char* orientation){
-	Declare a dynamic 2D array to hold the energy values for all pixels
-	for (int row = 1; row < height; row++)    {
-        	for(int column= 0; column < width; column++)    {
-            		if (orientation[0] == 'v')
-               			 energyArray[row][column] = computeEnergy(column, row, buffer);
-            		else
-                		energyArray[row][column] = computeEnergy(row, column, buffer);
-        }
-    }
-
-}*/
 
 void generateEnergyMatrix(int num_rows, int start_col, int stop_col, int num_pes, char* orientation){
     for (int row = 1; row < num_rows; row++)    {
@@ -181,15 +178,11 @@ void generateEnergyMatrix(int num_rows, int start_col, int stop_col, int num_pes
                                  energyArray[row][column] = computeEnergy(column, row, buffer);
                         else
                                 energyArray[row][column] = computeEnergy(row, column, buffer);
-		//Put thr new value in PE 0
+		//Put the new value in PE 0
 		shmem_int_put(&energyArray[row][column], &energyArray[row][column], 1, 0);
 		shmem_quiet();
         }
     }
-	/*shmem_barrier_all();
- 	if (num_pes > 1)
-       		 shmem_broadcast32(energyArray, energyArray, width*height, 0, 0, 0, num_pes, pSync);*/
-	
 }
                                                                                
 
@@ -206,7 +199,10 @@ void relax(int row, int col, int** edgeTo, int** distTo, int width) {
             if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]) {
                 distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
                 edgeTo[nextRow][nextCol] = i;
-
+		/*Put the new values in PE 0, it will be broadcast later*/
+		shmem_int_put(&distTo[nextRow][nextCol], &distTo[nextRow][nextCol], 1, 0);
+		shmem_int_put(&edgeTo[nextRow][nextCol], &edgeTo[nextRow][nextCol], 1, 0);
+		shmem_quiet();
             }
         }
     }
@@ -246,30 +242,26 @@ int* backTrack(int** edgeTo, int** distTo, int height, int width){
 		return transposedRGBuffer;
 }
 
-//TO BE PARALLELIZED
 //Find the indexes of the vertical seams to be carved out
-int * identifySeams( int width, int height){
-	
-	
-	
+int * identifySeams( int width, int height, int start_col, int stop_col, int npes){
 	distTo = initializeDistTo(height, width);
 	edgeTo = initializeEdgeTo(height, width);
 
 	//Initialize distTo to maximum values
-	
-        for (int row = 0; row < height; row++) {
-            for (int col = 0; col < width; col++) {
-                if (row == 0)
-                    distTo[row][col] = BASE_ENERGY;
-                else
-                    distTo[row][col] = std::numeric_limits<int>::max();
-            }
-       }
 
 	 for (int row = 0; row < height - 1; row++) {
-            for (int col = 0; col < width; col++) {
+            for (int col = start_col; col < stop_col; col++) {
                 relax(row, col, edgeTo, distTo, width);
             }
+		//All PEs wait for one another
+		shmem_barrier_all();
+
+		/*PE 0 broadcasts its new edges and distance values
+			so all PEs have up-to-date values*/
+		 if (npes > 1){
+                          shmem_broadcast64(distTo, distTo, width*height, 0, 0, 0, npes, pSync);
+			  shmem_broadcast64(edgeTo, edgeTo, width*height, 0, 0, 0, npes, pSync);
+		}
         }
 }
 
@@ -377,7 +369,7 @@ double timestamp()
 }
 
 int main(int argc, char **argv){
-	static long pSync[SHMEM_BCAST_SYNC_SIZE];
+	//static long pSync[SHMEM_BCAST_SYNC_SIZE];
 	 for (int i = 0; i < SHMEM_BCAST_SYNC_SIZE; i++)
                 pSync[i] = SHMEM_SYNC_VALUE;
 
@@ -442,7 +434,7 @@ int main(int argc, char **argv){
 			cout<<"Removing vertical seams"<<endl;
 		
 		//Find the vertical seam in the image
-		identifySeams(width, height);
+		identifySeams(width, height, start_col, stop_col, npes);
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
 
 		/*PE 0 will remove the identified seams
@@ -486,7 +478,7 @@ int main(int argc, char **argv){
 			cout<<"Removing horizontal seams"<<endl;
 		
 		/*Find the horizontal seams in the image*/
-		identifySeams(height, width);
+		identifySeams(height, width, start_col, stop_col, npes);
 		int* h_seams =  backTrack(edgeTo, distTo, width, height);
 		
 		/*Revome the identified horizontal seams*/
