@@ -423,8 +423,7 @@ int main(int argc, char **argv){
 		
 		//Fill the energy matrix with the energy values of each pixel
 		generateEnergyMatrix(height, start_col, stop_col, npes, orientation);
-		
-		 shmem_barrier_all();
+		shmem_barrier_all();
 
        		 if (npes > 1)
                		  shmem_broadcast64(energyArray, energyArray, width*height, 0, 0, 0, npes, pSync);
@@ -467,8 +466,6 @@ int main(int argc, char **argv){
 		
 		/*Compute energy values*/
 		generateEnergyMatrix(width, start_col, stop_col, npes, orientation);
-		//shmem_barrier_all();
-		
 		shmem_barrier_all();
 
                  if (npes > 1)
