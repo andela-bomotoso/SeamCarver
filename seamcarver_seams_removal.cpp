@@ -361,7 +361,8 @@ double timestamp()
 }
 
 int main(int argc, char **argv){
-	double total_begin = timestamp();
+	//double total_begin = timestamp();
+	for (int i = 0; i < 50; i++){
 	char * original_img = argv[1]; 
 	char* orientation = argv[2];
 	int num_threads = atoi(argv[3]);
@@ -369,8 +370,48 @@ int main(int argc, char **argv){
 	pngwrt.readfromfile(original_img);
 	width = pngwrt.getwidth();
 	height = pngwrt.getheight();
+	int new_width, new_height; 
+        int seams_num;
+/*	cout<<"Width: "<<width<<" Height: "<<height<<endl;
+	if (orientation[0] == 'v' || orientation[0] == 'V'){
+		cout << "Enter the new width:";		
+		cin>>new_width;
+		if (new_width < 2){
+			cerr<<"The new width should be greater than 2"<<endl;
+			exit(1);
+		}
 
-	cout<<"Width: "<<width<<" Height: "<<height<<endl;
+		if(new_width == width){
+			cout<<"No resizing needed"<<endl;
+			exit(1);
+		}
+		if(new_width > width){
+			cerr<<"Image enlargement is not supported"<<endl;
+			exit(1);
+		}
+		seams_num = width - new_width;
+	}
+
+	//Ask user for new height
+	else{
+                cout << "Enter the new height:";
+                cin>>new_height;
+                if (new_height < 2){
+                        cerr<<"The new height should be greater than 2"<<endl;
+                        exit(1);
+                }
+
+                if(new_height == height){
+                        cout<<"No resizing needed"<<endl;
+                        exit(1);
+                }
+                if(new_height > height){
+                        cerr<<"Image enlargement is not supported"<<endl;
+                        exit(1);
+                }
+		seams_num = height - new_height;
+        }*/
+	double total_begin = timestamp();
 	double begin, end;
 
 	//begin = timestamp();	
@@ -389,7 +430,7 @@ int main(int argc, char **argv){
 	int* v_seams;
 	//Check the orientation to determine how to carve
 	//Vertical Orientation
-	if(orientation[0] == 'v'){
+	if(orientation[0] == 'v' || orientation[0] == 'V'){
 		begin = timestamp();
 		verticalSeams = new int[height];
 		distTo = new int*[height];
@@ -428,7 +469,7 @@ int main(int argc, char **argv){
 		}
 		
 	
-		cout<<"Removing vertical seams"<<endl;
+		//cout<<"Removing vertical seams"<<endl;
 		begin = timestamp();
 		for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &identifySeams, (void*)&data[i]);
@@ -451,7 +492,7 @@ int main(int argc, char **argv){
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
 		carved_seams = lqr_carver_new(seams, width, height, 3);
 		end = timestamp();
-		cout<<"Total SeamCarving Time: "<<(end - begin)<<endl;
+		//cout<<"Total SeamCarving Time: "<<(end - begin)<<endl;
 		
 	}
 	//Horizontal Seams
@@ -496,7 +537,7 @@ int main(int argc, char **argv){
 			pthread_join(threads[i], NULL);
 		}
 
-		cout<<"Removing horizontal seams"<<endl;
+		//cout<<"Removing horizontal seams"<<endl;
 
 		for (int i = 0; i < num_threads; i++){
                          pthread_create(&threads[i], NULL, &identifySeams, (void*)&data[i]);
@@ -515,21 +556,22 @@ int main(int argc, char **argv){
 		for (int i = 0;  i < NUM_OF_THREADS; i++){
 			pthread_join(threads[i], NULL);
 		}*/
-
+		
 		carver = lqr_carver_new(transposeRGBuffer(carved_imageV, height,width), width, height, 3);
 		carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
 		end = timestamp();
-		cout<<"Total SeamCarving Time: "<<(end - begin)<<endl;
+		//cout<<"Total SeamCarving Time: "<<(end - begin)<<endl;
 	}
 
 	//Create a Carver object with the carved image buffer
 	TRAP(lqr_carver_init(carver, max_step, rigidity));
-	//write_carver_to_image(carver, &pngwrt, orientation);
-	printSeams(carved_seams, &pngwrt);
+	write_carver_to_image(carver, &pngwrt, orientation);
+	//printSeams(carved_seams, &pngwrt);
 	lqr_carver_destroy(carver);
 	pngwrt.close();
+}
 	double total_end = timestamp();
-	printf("%s%5.2f\n","Total Processing Time: ", (total_end-total_begin));
+	//printf("%s%5.2f\n","Total Processing Time: ", (total_end-total_begin));
 	pthread_barrier_destroy(&mybarrier);
 
 	return 0;

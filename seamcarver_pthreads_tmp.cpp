@@ -362,6 +362,7 @@ double timestamp()
 
 int main(int argc, char **argv){
 	double total_begin = timestamp();
+
 	char * original_img = argv[1]; 
 	char* orientation = argv[2];
 	int num_threads = atoi(argv[3]);
