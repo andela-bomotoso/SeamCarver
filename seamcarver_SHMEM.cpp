@@ -179,9 +179,7 @@ void generateEnergyMatrix(int num_rows, int start_col, int stop_col, int num_pes
                         else
                                 energyArray[row][column] = computeEnergy(row, column, buffer);
 		//Put the new value in PE 0
-		//shmem_int_put(&energyArray[row][column], &energyArray[row][column], 1, 0);
 		shmem_int_put(&energyArray[row][column], &energyArray[row][column], 1, 0);
-		//shmem_quiet();
         }
     }
 }
@@ -200,6 +198,7 @@ void relax(int row, int col, int width, int start_col, int stop_col, int me, int
             if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]) {
                 distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
                 edgeTo[nextRow][nextCol] = i;
+
 		/*Put the new values in PE 0, it will be broadcast later*/
 		shmem_int_put(&distTo[nextRow][nextCol], &distTo[nextRow][nextCol], 1, 0);
 		shmem_int_put(&edgeTo[nextRow][nextCol], &edgeTo[nextRow][nextCol], 1, 0);
@@ -256,7 +255,7 @@ int * identifySeams( int width, int height, int start_col, int stop_col, int me,
 		//All PEs wait for one another
 		shmem_barrier_all();
 
-		/*PE 0 broadcasts its new edges and distance values
+		/*PE 0 shares its new edges and distance values
 			so all PEs have up-to-date values*/
 		if (me == 0)	{
 			for (int pe = 1; pe < npes; pe++){
