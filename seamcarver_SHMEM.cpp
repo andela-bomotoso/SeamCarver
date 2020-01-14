@@ -246,7 +246,6 @@ int* backTrack(int** edgeTo, int** distTo, int height, int width){
 int * identifySeams( int width, int height, int start_col, int stop_col, int me, int npes){
 	distTo = initializeDistTo(height, width);
 	edgeTo = initializeEdgeTo(height, width);
-	int num_cols = stop_col - start_col + 1;
 
 	//Initialize distTo to maximum values
 
@@ -259,10 +258,13 @@ int * identifySeams( int width, int height, int start_col, int stop_col, int me,
 
 		/*PE 0 broadcasts its new edges and distance values
 			so all PEs have up-to-date values*/
-		 if (npes > 1){
-                          shmem_broadcast64(&distTo[row+1][0], &distTo[row+1][0], width, 0, 0, 0, npes, pSync);
-			  shmem_broadcast64(&edgeTo[row+1][0], &edgeTo[row+1][0], width, 0, 0, 0, npes, pSync);
+		if (me == 0)	{
+			for (int pe = 1; pe < npes; pe++){
+				shmem_int_put(&distTo[row+1][0], &distTo[row+1][0], width, pe);
+				shmem_int_put(&edgeTo[row+1][0], &edgeTo[row+1][0], width, pe);
+			}
 		}
+		shmem_barrier_all();
         }
 }
 
@@ -417,7 +419,6 @@ int main(int argc, char **argv){
 		int col_per_pe = (width + npes - 1)/npes;
 		int start_col = me * col_per_pe;
 		int stop_col = (me + 1) * col_per_pe;
-
 		/*Ensure that the last pe does not exceed the last row*/
 		if (me == npes - 1)
 			stop_col  = width;
