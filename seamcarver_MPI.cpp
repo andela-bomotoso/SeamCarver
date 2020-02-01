@@ -29,7 +29,10 @@ guchar* buffer;
 int* verticalSeams;
 int** distTo;
 int** edgeTo;
-//static long pSync[SHMEM_BCAST_SYNC_SIZE];
+int* flattenedEnergyArray;
+int* flattenedDistTo;
+int* flattenedEdgeTo;
+MPI_Win win;
 
 
 /*Copied from the liblqr example
@@ -145,6 +148,14 @@ int** initializeEnergyArray(int rows, int columns){
 	return energyArray;
 }
 
+
+int* initialize1DArray(int rows, int columns){
+        int* array1D = (int*)malloc(rows*columns*sizeof(int));
+	 for ( int i = 0; i < rows*columns; i++)
+                array1D[i] = 0;
+        return array1D;
+}
+
 int** initializeEdgeTo(int rows, int columns){
         int** edgeTo;
         edgeTo = (int**) malloc(rows*sizeof(int*));
@@ -170,6 +181,49 @@ int** initializeDistTo(int rows, int columns){
         return distTo;
 }
 
+//Convert a 2D array to 1D
+
+int* flattenArray(int** arrayToFlatten, int num_rows, int num_cols){
+	int* flattenedArray = (int*) malloc(num_rows*num_cols*sizeof(int));
+	int counter = 0;
+	
+	for (int row = 0; row < num_rows; row++){
+		for(int col = 0; col < num_cols; col++){
+			flattenedArray[counter] = arrayToFlatten[row][col];
+			counter++;
+		}
+	}
+		return flattenedArray;
+}
+
+//Convert a 1D array to 2D
+int** unflattenArray(int* flattenedArray, int num_rows, int num_cols){
+	int** unflattenedArray =  (int**) malloc(num_rows*sizeof(int*));
+        for (int i = 0; i < num_rows; i++)
+                unflattenedArray[i] = (int*) malloc(num_cols*sizeof(int));
+	int counter = 0;
+	for (int row = 0; row < num_rows; row++){
+		for (int col = 0; col < num_cols; col++){
+			//if (row == 1)
+			//	cout<<"Row: "<<row<<" Col: "<<col<<" Counter:"<<flattenedArray[counter]<<endl;
+			unflattenedArray[row][col] = flattenedArray[counter];
+			counter++;
+		}
+	}
+	return unflattenedArray;
+}
+
+//Given a 1D array, find the row of a given cell if it were to be a 2D array
+int getRow(int* flattenedArray, int cell, int num_rows, int num_cols){
+		return (cell/num_cols);
+}
+
+//Given a 1D array, find the col of a given cell if it were to be a 2D array
+int getCol(int* flattenedArray, int cell, int num_rows, int num_cols){
+	return cell%num_cols;
+}
+
+
 
 void generateEnergyMatrix(int num_rows, int start_col, int stop_col, int num_pes, char* orientation){
     for (int row = 1; row < num_rows; row++)    {
@@ -182,6 +236,24 @@ void generateEnergyMatrix(int num_rows, int start_col, int stop_col, int num_pes
 		//shmem_int_put(&energyArray[row][column], &energyArray[row][column], 1, 0);
         }
     }
+}
+
+void generateEnergyMatrixID(int num_rows, int num_cols, int start_cell, int stop_cell, int pe, char* orientation){
+  for (int cell = start_cell; cell < stop_cell; cell++)  {
+	int row = getRow(flattenedEnergyArray, cell, num_rows, num_cols);
+	int column = getCol(flattenedEnergyArray, cell, num_rows, num_cols);
+                        if (orientation[0] == 'v')
+                                 flattenedEnergyArray[cell] = computeEnergy(column, row, buffer);
+                        else
+                                flattenedEnergyArray[cell] = computeEnergy(row, column, buffer);
+                //Put the new value in PE 0
+                if (pe > 0){
+                	MPI_Win_fence(0, win);
+			MPI_Put(&flattenedEnergyArray[cell], 1, MPI_INT, 0, cell, 1, MPI_INT, win);
+			MPI_Win_fence(0, win);
+		}
+                //shmem_int_put(&energyArray[row][column], &energyArray[row][column], 1, 0);
+        }
 }
                                                                                
 
@@ -371,14 +443,11 @@ double timestamp()
 }
 
 int main(int argc, char **argv){
-	//static long pSync[SHMEM_BCAST_SYNC_SIZE];
-	 /*for (int i = 0; i < SHMEM_BCAST_SYNC_SIZE; i++)
-                pSync[i] = SHMEM_SYNC_VALUE;
-*/
-	MPI_Init(NULL, NULL);
+	MPI_Init(&argc, &argv);
 	int me, npes;
 	MPI_Comm_size(MPI_COMM_WORLD, &npes);
-	MPI_Comm_rank(MPI_COMM_WORLD, &me);
+	MPI_Comm_rank(MPI_COMM_WORLD, &me); 
+
 	double total_begin = timestamp();
 	
 	char * original_img = argv[1]; 
@@ -389,9 +458,13 @@ int main(int argc, char **argv){
 	pngwrt.readfromfile(original_img);
 	width = pngwrt.getwidth();
 	height = pngwrt.getheight();
-	
 
-        if (me == 1)
+	int cells_num = height*width;
+	flattenedEnergyArray = initialize1DArray(height, width);
+	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, flattenedEnergyArray, &win); 
+
+
+        if (me == 0)
 		cout<<"Width: "<<width<<" Height: "<<height<<endl;
 
 	double begin, end;
@@ -414,14 +487,24 @@ int main(int argc, char **argv){
 		
 		//initialize energy array
 		energyArray = initializeEnergyArray(height, width);
-		/*Divide the work among the available PEs*/
-		int col_per_pe = (width + npes - 1)/npes;
 		
-	int start_col = me * col_per_pe;
-	int stop_col = (me + 1) * col_per_pe;
+		flattenedEnergyArray = initialize1DArray(height, width);
+		/*Divide the work among the available PEs*/
+		int cell_per_pe = (width*height + npes - 1)/npes;
+		int col_per_per = (width + npes - 1)/npes;
+		
+	int start_cell = me * cell_per_pe;
+	int stop_cell = (me + 1) * cell_per_pe;
+	//cout<<"PE: "<<me<<" "<<start_cell<<" "<<stop_cell<<endl;
+	int start_col = me*col_per_per;
+	int stop_col = (me+1) * col_per_per;
+
 	/*Ensure that the last pe does not exceed the last row*/
 	if (me == npes - 1)
-		stop_col  = width;
+		stop_cell  = width*height;
+	
+	  if (me == npes - 1)
+                stop_col  = width;
 
 	int start_col_en =  start_col;
 	int stop_col_en = stop_col;
@@ -432,14 +515,21 @@ int main(int argc, char **argv){
 		if (me < npes - 1)
 			stop_col_en = stop_col + 1;
 
-	
+		
 		//Fill the energy matrix with the energy values of each pixel
-		generateEnergyMatrix(height, start_col_en, stop_col_en, npes, orientation);
-		//shmem_barrier_all();
 
+		//generateEnergyMatrix(height, start_col_en, stop_col_en, npes, orientation);
+		generateEnergyMatrixID(height, width, start_cell, stop_cell, me, orientation);
+		//shmem_barrier_all();
+		MPI_Barrier(MPI_COMM_WORLD);
+		//energyArray = unflattenArray(flattenedEnergyArray, height, width);
+		 //PE 0 converts the ID Array to 2D
+
+		if (me == 0){
+			energyArray = unflattenArray(flattenedEnergyArray, height, width);
 		//Find the vertical seam in the image
 		identifySeams(width, height, start_col, stop_col, me, npes);
-		 if (me  == 0){
+		 //if (me  == 0){
                         cout<<"Removing vertical seams"<<endl;
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
 
