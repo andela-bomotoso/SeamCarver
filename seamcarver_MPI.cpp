@@ -247,11 +247,11 @@ void generateEnergyMatrixID(int num_rows, int num_cols, int start_cell, int stop
                         else
                                 flattenedEnergyArray[cell] = computeEnergy(row, column, buffer);
                 //Put the new value in PE 0
+                MPI_Win_fence(0, win);
                 if (pe > 0){
-                	MPI_Win_fence(0, win);
 			MPI_Put(&flattenedEnergyArray[cell], 1, MPI_INT, 0, cell, 1, MPI_INT, win);
-			MPI_Win_fence(0, win);
 		}
+		MPI_Win_fence(0, win);
                 //shmem_int_put(&energyArray[row][column], &energyArray[row][column], 1, 0);
         }
 }
