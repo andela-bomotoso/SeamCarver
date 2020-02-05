@@ -461,7 +461,7 @@ int main(int argc, char **argv){
 
 	int cells_num = height*width;
 	flattenedEnergyArray = initialize1DArray(height, width);
-	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, flattenedEnergyArray, &win); 
+	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedEnergyArray, &win); 
 
 
         if (me == 0)
@@ -488,7 +488,7 @@ int main(int argc, char **argv){
 		//initialize energy array
 		energyArray = initializeEnergyArray(height, width);
 		
-		flattenedEnergyArray = initialize1DArray(height, width);
+		//flattenedEnergyArray = initialize1DArray(height, width);
 		/*Divide the work among the available PEs*/
 		int cell_per_pe = (width*height + npes - 1)/npes;
 		int col_per_per = (width + npes - 1)/npes;
@@ -528,7 +528,7 @@ int main(int argc, char **argv){
 		if (me == 0){
 			energyArray = unflattenArray(flattenedEnergyArray, height, width);
 		//Find the vertical seam in the image
-		identifySeams(width, height, start_col, stop_col, me, npes);
+		identifySeams(width, height, 0, width, me, npes);
 		 //if (me  == 0){
                         cout<<"Removing vertical seams"<<endl;
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
