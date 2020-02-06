@@ -284,38 +284,6 @@ void generateEnergyMatrixID(int num_rows, int num_cols, int start_cell, int stop
 }
                                                                                
 
-/*Declare a relax function to optimize the computation of a 
-	shortest path energy values*/
-
-void relax(int row, int col, int width, int start_col, int stop_col, int me, int npes) {
-	//cout<<"Hello PE: "<<me<<endl;
-	int relax = 0;
-        int nextRow = row + 1;
-        int cell = row*width + col;
-        for (int i = -1; i <= 1; i++) {
-            int nextCol = col + i;
-	    int nextCell = nextRow*width + nextCol;
-            if (nextCol < 0 || nextCol >= width)
-                continue;
-         
-		if (flattenedDistTo[nextCell] >= flattenedDistTo[cell] + flattenedEnergyArray[nextCell]){
-			flattenedDistTo[nextCell] = flattenedDistTo[cell] + flattenedEnergyArray[nextCell];
-			flattenedEdgeTo[nextCell] = i;
-
-		/*Put the new values in PE 0, other PEs will fetch these values later*/
-		
-		MPI_Win_fence(0, win);
-                if (me > 0)
-                       MPI_Put(&flattenedDistTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win);
-		MPI_Win_fence(0, win);
-			
-		MPI_Win_fence(0, win);
-		if (me > 0)
-			MPI_Put(&flattenedEdgeTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win);
-                MPI_Win_fence(0, win);
-            }
-        }
-    }
 
 int* backTrack(int** edgeTo, int** distTo, int height, int width){
 // Backtrack from the last row to get a shortest path
@@ -352,6 +320,37 @@ int* backTrack(int** edgeTo, int** distTo, int height, int width){
 		return transposedRGBuffer;
 }
 
+/*Declare a relax function to optimize the computation of a
+ *         shortest path energy values*/
+
+void relax(int row, int col, int width, int start_col, int stop_col, int me, int npes) {
+
+        int relax = 0;
+        int nextRow = row + 1;
+        int cell = row*width + col;
+        for (int i = -1; i <= 1; i++) {
+            int nextCol = col + i;
+            int nextCell = nextRow*width + nextCol;
+            if (nextCol < 0 || nextCol >= width)
+                continue;
+
+                if (flattenedDistTo[nextCell] >= flattenedDistTo[cell] + flattenedEnergyArray[nextCell]){
+                        flattenedDistTo[nextCell] = flattenedDistTo[cell] + flattenedEnergyArray[nextCell];
+                        flattenedEdgeTo[nextCell] = i;
+
+                /*Put the new values in PE 0, other PEs will fetch these values later*/
+
+                MPI_Win_fence(0, win);
+                if (me != 0){
+                        MPI_Put(&flattenedDistTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win);
+                        MPI_Put(&flattenedEdgeTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win);
+                }
+                MPI_Win_fence(0, win);
+            }
+        }
+    }
+
+
 //Find the indexes of the vertical seams to be carved out
 int * identifySeams( int width, int height, int start_col, int stop_col, int me, int npes){
 	 int nextCell = 0;
@@ -365,13 +364,10 @@ int * identifySeams( int width, int height, int start_col, int stop_col, int me,
 		/*Other PEs get the new values for the next row from PE 0*/
 
 		MPI_Win_fence(0, win);
-                if (me != 0 )
-                        	MPI_Get(&flattenedDistTo[nextCell], width, MPI_INT, 0, nextCell, width, MPI_INT, win);
-		MPI_Win_fence(0, win);
-
-		MPI_Win_fence(0, win);
-		if (me != 0)
-                         	MPI_Get(&flattenedEdgeTo[nextCell], width, MPI_INT, 0, nextCell, width, MPI_INT, win);
+		if (me != 0){
+                       	MPI_Get(&flattenedDistTo[nextCell], width, MPI_INT, 0, nextCell, width, MPI_INT, win);
+                        MPI_Get(&flattenedEdgeTo[nextCell], width, MPI_INT, 0, nextCell, width, MPI_INT, win);
+		}
                 MPI_Win_fence(0, win);
 	
         }
