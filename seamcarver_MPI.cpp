@@ -219,8 +219,7 @@ int** unflattenArray(int* flattenedArray, int num_rows, int num_cols){
 	int counter = 0;
 	for (int row = 0; row < num_rows; row++){
 		for (int col = 0; col < num_cols; col++){
-			//if (row == 1)
-			//	cout<<"Row: "<<row<<" Col: "<<col<<" Counter:"<<flattenedArray[counter]<<endl;
+		
 			unflattenedArray[row][col] = flattenedArray[counter];
 			counter++;
 		}
@@ -266,8 +265,6 @@ void generateEnergyMatrix(int num_rows, int start_col, int stop_col, int me, int
 			if(me > 0)
 				 MPI_Put(&flattenedEnergyArray[cell], 1, MPI_INT, 0, cell, 1, MPI_INT, win);
 		MPI_Win_unlock_all(win);
-
-		//shmem_int_put(&energyArray[row][column], &energyArray[row][column], 1, 0);
         }
     }
 }
@@ -331,7 +328,6 @@ int* backTrack(int** edgeTo, int** distTo, int height, int width){
  *         shortest path energy values*/
 
 void relax(int row, int col, int width, int start_col, int stop_col, int me, int npes) {
-
         int relax = 0;
         int nextRow = row + 1;
         int cell = row*width + col;
@@ -344,32 +340,25 @@ void relax(int row, int col, int width, int start_col, int stop_col, int me, int
                 if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]){
                         distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
                         edgeTo[nextRow][nextCol] = i;
-		
-		flattenedDistTo[nextCell] = distTo[nextRow][nextCol];
-		flattenedEdgeTo[nextCell] = edgeTo[nextRow][nextCol];
+
+			flattenedDistTo[nextCell] = distTo[nextRow][nextCol];
+			flattenedEdgeTo[nextCell] = i;
 		
 
                 /*Put the new values in PE 0, other PEs will fetch these values later*/
-
-                MPI_Win_lock_all(0, win1);
-                if (me != 0)
-                        MPI_Put(&flattenedDistTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win1);
-		MPI_Win_unlock_all(win1);
-		
-		MPI_Win_lock_all(0, win2);
-		if (me != 0)
-                        MPI_Put(&flattenedEdgeTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win2);
-                MPI_Win_unlock_all(win2);
-            }
+                MPI_Win_lock_all(0, win);
+                if (me > 0){
+                        MPI_Put(&flattenedDistTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win);
+                        MPI_Put(&flattenedEdgeTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win);
+                }
+		MPI_Win_unlock_all( win);
         }
     }
+}
 
 
 //Find the indexes of the vertical seams to be carved out
 int * identifySeams( int width, int height, int start_col, int stop_col, int me, int npes){
-	 int nextCell = 0;
-	 distTo = initializeDistTo(height, width);
-	 edgeTo = initializeEdgeTo(height, width);
 	
 	 for (int row = 0; row < height - 1; row++) {
              for (int col = start_col; col < stop_col; col++) {
@@ -381,20 +370,13 @@ int * identifySeams( int width, int height, int start_col, int stop_col, int me,
 
 		/*Other PEs get the new values for the next row from PE 0*/
 
-		MPI_Win_lock_all(0, win1);
-		if (me == 0)
-			for (int pe = 1; pe < npes; pe++)
-                       		MPI_Put(&flattenedDistTo[nextCell], width, MPI_INT, pe, nextCell, width, MPI_INT, win1);
-		MPI_Win_unlock_all(win1);
-
-		MPI_Win_lock_all(0, win2);
-		if (me == 0)
-			for(int pe = 1; pe < npes; pe++)
-                        	MPI_Put(&flattenedEdgeTo[nextCell], width, MPI_INT, pe, nextCell, width, MPI_INT, win2);
-                MPI_Win_unlock_all(win2);
-	
-        }
-	MPI_Barrier(MPI_COMM_WORLD);
+		if (npes > 1){
+                	MPI_Bcast(&flattenedDistTo[nextCell], width, MPI_INT, 0, MPI_COMM_WORLD);
+		
+                	MPI_Bcast(&flattenedEdgeTo[nextCell], width, MPI_INT, 0, MPI_COMM_WORLD);
+        	}	
+		MPI_Barrier(MPI_COMM_WORLD);	}
+	             
 }
 
 
@@ -520,13 +502,13 @@ int main(int argc, char **argv){
 	int cells_num = height*width;
 	flattenedEnergyArray = initialize1DArray(height, width);
 	flattenedDistTo = initializeDistTo1D(height, width);
-	//cout<<flattenedDistTo[500]<<endl;
+	
 	flattenedEdgeTo = initialize1DArray(height, width);
 	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedEnergyArray, &win); 
-	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedDistTo, &win1);
+	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedDistTo, &win);
 	flattenedDistTo = initializeDistTo1D(height, width);
 	//cout<<flattenedDistTo[500]<<endl;
-	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedEdgeTo, &win2);
+	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedEdgeTo, &win);
 
         if (me == 0)
 		cout<<"Width: "<<width<<" Height: "<<height<<endl;
@@ -551,7 +533,8 @@ int main(int argc, char **argv){
 		
 		//initialize energy array
 		energyArray = initializeEnergyArray(height, width);
-		
+		distTo = initializeDistTo(height, width);
+         	edgeTo = initializeEdgeTo(height, width);
 		/*Divide the work among the available PEs*/
 		int cell_per_pe = (width*height + npes - 1)/npes;
 		int col_per_per = (width + npes - 1)/npes;
@@ -585,22 +568,18 @@ int main(int argc, char **argv){
 		//generateEnergyMatrixID(height, width, start_cell, stop_cell, me, orientation);
 	
 		MPI_Barrier(MPI_COMM_WORLD);
-		
 		energyArray = unflattenArray(flattenedEnergyArray, height, width);
-		 
+		 MPI_Barrier(MPI_COMM_WORLD);
 		/* PE 0 broadcasts its energy values*/
 		if (npes > 1)
-	 		MPI_Bcast(&energyArray[0][0], width*height, MPI_INT, 0, MPI_COMM_WORLD);
+	 	MPI_Bcast(&energyArray[0][0], width*height, MPI_INT, 0, MPI_COMM_WORLD);
 
 		
 		identifySeams(width, height, start_col, stop_col, me, npes);
-
-		if(me == 0){
-
+		if (me == 0){
 			distTo = unflattenArray(flattenedDistTo, height, width);
 			edgeTo = unflattenArray(flattenedEdgeTo, height, width);
-		
-                        cout<<"Removing vertical seams"<<endl;
+                cout<<"Removing vertical seams"<<endl;
 
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
 		
