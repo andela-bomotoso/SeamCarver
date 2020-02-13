@@ -256,35 +256,23 @@ void generateEnergyMatrix(int num_rows, int start_col, int stop_col, int me, int
                 for(int column = start_col; column < stop_col; column++)    {
 			int cell = row*width+column;
                         if (orientation[0] == 'v')
-                                 energyArray[row][column] = computeEnergy(column, row, buffer);
-                        else
-                                energyArray[row][column] = computeEnergy(row, column, buffer);
-		//Put the new value in PE 0
-		flattenedEnergyArray[cell] = energyArray[row][column];
-		MPI_Win_lock_all(0, win);
-			if(me > 0)
-				 MPI_Put(&flattenedEnergyArray[cell], 1, MPI_INT, 0, cell, 1, MPI_INT, win);
-		MPI_Win_unlock_all(win);
-        }
-    }
-}
-
-void generateEnergyMatrixID(int num_rows, int num_cols, int start_cell, int stop_cell, int pe, char* orientation){
-  for (int cell = start_cell; cell < stop_cell; cell++)  {
-	int row = getRow( cell, num_cols);
-	int column = getCol(cell, num_cols);
-                        if (orientation[0] == 'v')
                                  flattenedEnergyArray[cell] = computeEnergy(column, row, buffer);
                         else
                                 flattenedEnergyArray[cell] = computeEnergy(row, column, buffer);
-                //Put the new value in PE 0
-                MPI_Win_lock_all(0, win);
-                if (pe > 0){
-			MPI_Put(&flattenedEnergyArray[cell], 1, MPI_INT, 0, cell, 1, MPI_INT, win);
-		}
+		
+	/*if (cell == 1900 || cell == 1250){
+		cout<< "Printing values inside the energy generation matrix" <<endl;
+        	cout<<"Cell "<<cell<< " processed by PE: "<<me<<" has a value of: "<<flattenedEnergyArray[cell]<<endl;
+	}*/
+
+		/*Put the new value in PE 0*/
+		MPI_Win_lock_all(0, win);
+			if(me > 0)
+				MPI_Put(&flattenedEnergyArray[cell], 1, MPI_INT, 0, cell, 1, MPI_INT, win);
+		MPI_Win_flush_all(win);
 		MPI_Win_unlock_all(win);
-                //shmem_int_put(&energyArray[row][column], &energyArray[row][column], 1, 0);
         }
+    }
 }
                                                                                
 
@@ -337,29 +325,35 @@ void relax(int row, int col, int width, int start_col, int stop_col, int me, int
             if (nextCol < 0 || nextCol >= width)
                 continue;
 
-                if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]){
-                        distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
-                        edgeTo[nextRow][nextCol] = i;
-
-			flattenedDistTo[nextCell] = distTo[nextRow][nextCol];
+		if (flattenedDistTo[nextCell] >= flattenedDistTo[cell] + flattenedEnergyArray[nextCell]){
+			flattenedDistTo[nextCell] = flattenedDistTo[cell] + flattenedEnergyArray[nextCell];
 			flattenedEdgeTo[nextCell] = i;
-		
 
                 /*Put the new values in PE 0, other PEs will fetch these values later*/
-                MPI_Win_lock_all(0, win);
-                if (me > 0){
-                        MPI_Put(&flattenedDistTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win);
-                        MPI_Put(&flattenedEdgeTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win);
+                
+			MPI_Win_lock_all(0, win1);
+			if (me > 0){
+                        	MPI_Put(&flattenedDistTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win1);
+			}
+			MPI_Win_flush_all(win1);
+		        MPI_Win_unlock_all(win1);		
+			
+			MPI_Win_lock_all(0, win2);
+			if (me > 0){
+                        	MPI_Put(&flattenedEdgeTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win2);
+			}
+			MPI_Win_flush_all(win2);
+			MPI_Win_unlock_all(win2);
+			
                 }
-		MPI_Win_unlock_all( win);
+		
         }
     }
-}
+
 
 
 //Find the indexes of the vertical seams to be carved out
 int * identifySeams( int width, int height, int start_col, int stop_col, int me, int npes){
-	
 	 for (int row = 0; row < height - 1; row++) {
              for (int col = start_col; col < stop_col; col++) {
                 relax(row, col, width, start_col, stop_col, me, npes);
@@ -375,7 +369,8 @@ int * identifySeams( int width, int height, int start_col, int stop_col, int me,
 		
                 	MPI_Bcast(&flattenedEdgeTo[nextCell], width, MPI_INT, 0, MPI_COMM_WORLD);
         	}	
-		MPI_Barrier(MPI_COMM_WORLD);	}
+		MPI_Barrier(MPI_COMM_WORLD);	
+	}
 	             
 }
 
@@ -500,15 +495,14 @@ int main(int argc, char **argv){
 	height = pngwrt.getheight();
 
 	int cells_num = height*width;
-	flattenedEnergyArray = initialize1DArray(height, width);
-	flattenedDistTo = initializeDistTo1D(height, width);
+	//flattenedEnergyArray = initialize1DArray(height, width);
 	
-	flattenedEdgeTo = initialize1DArray(height, width);
+	// Allocate a window for each buffer
 	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedEnergyArray, &win); 
-	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedDistTo, &win);
-	flattenedDistTo = initializeDistTo1D(height, width);
-	//cout<<flattenedDistTo[500]<<endl;
-	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedEdgeTo, &win);
+	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedDistTo, &win1);
+	//flattenedDistTo = initializeDistTo1D(height, width);
+	
+	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedEdgeTo, &win2);
 
         if (me == 0)
 		cout<<"Width: "<<width<<" Height: "<<height<<endl;
@@ -531,25 +525,34 @@ int main(int argc, char **argv){
 	
 		verticalSeams = new int[height];
 		
-		//initialize energy array
+		/*initialize energy 1D and 2D Array*/
 		energyArray = initializeEnergyArray(height, width);
+		flattenedEnergyArray = initialize1DArray(height, width);
+	
+		/*initialize distTo 1D and 2D arrays*/
 		distTo = initializeDistTo(height, width);
-         	edgeTo = initializeEdgeTo(height, width);
+		flattenedDistTo = initializeDistTo1D(height, width);
+         	
+		/*initialize edgeTo 1D and 2D arrays*/
+
+		edgeTo = initializeEdgeTo(height, width);
+		flattenedEdgeTo = initialize1DArray(height, width);
+
 		/*Divide the work among the available PEs*/
 		int cell_per_pe = (width*height + npes - 1)/npes;
 		int col_per_per = (width + npes - 1)/npes;
 		
-	int start_cell = me * cell_per_pe;
-	int stop_cell = (me + 1) * cell_per_pe;
-	//cout<<"PE: "<<me<<" "<<start_cell<<" "<<stop_cell<<endl;
-	int start_col = me*col_per_per;
-	int stop_col = (me+1) * col_per_per;
+		int start_cell = me * cell_per_pe;
+		int stop_cell = (me + 1) * cell_per_pe;
+
+		int start_col = me*col_per_per;
+		int stop_col = (me+1) * col_per_per;
 
 	/*Ensure that the last pe does not exceed the last row*/
 	if (me == npes - 1)
 		stop_cell  = width*height;
 	
-	  if (me == npes - 1)
+	if (me == npes - 1 )
                 stop_col  = width;
 
 	int start_col_en =  start_col;
@@ -565,16 +568,19 @@ int main(int argc, char **argv){
 		//Fill the energy matrix with the energy values of each pixel
 
 		generateEnergyMatrix(height, start_col_en, stop_col_en, me, npes, orientation);
-		//generateEnergyMatrixID(height, width, start_cell, stop_cell, me, orientation);
 	
 		MPI_Barrier(MPI_COMM_WORLD);
-		energyArray = unflattenArray(flattenedEnergyArray, height, width);
-		 MPI_Barrier(MPI_COMM_WORLD);
-		/* PE 0 broadcasts its energy values*/
-		if (npes > 1)
-	 	MPI_Bcast(&energyArray[0][0], width*height, MPI_INT, 0, MPI_COMM_WORLD);
 
-		
+		/* PE 0 broadcasts the values of the 1D energy Array*/ 
+ 		if (npes > 1)
+			MPI_Bcast(&flattenedEnergyArray[0], width*height, MPI_INT, 0, MPI_COMM_WORLD);
+		 
+		MPI_Barrier(MPI_COMM_WORLD);
+
+	       /*cout<< "Printing values after PE 0 does a broadcast" <<endl;
+                cout<<"Cell 1250 on PE: "<<me<<" has a value of: "<<flattenedEnergyArray[1250]<<endl;
+		cout<<"Cell 1900 on PE: "<<me<<" has a value of: "<<flattenedEnergyArray[1900]<<endl;	*/
+
 		identifySeams(width, height, start_col, stop_col, me, npes);
 		if (me == 0){
 			distTo = unflattenArray(flattenedDistTo, height, width);
