@@ -260,11 +260,6 @@ void generateEnergyMatrix(int num_rows, int start_col, int stop_col, int me, int
                         else
                                 flattenedEnergyArray[cell] = computeEnergy(row, column, buffer);
 		
-	/*if (cell == 1900 || cell == 1250){
-		cout<< "Printing values inside the energy generation matrix" <<endl;
-        	cout<<"Cell "<<cell<< " processed by PE: "<<me<<" has a value of: "<<flattenedEnergyArray[cell]<<endl;
-	}*/
-
 		/*Put the new value in PE 0*/
 		MPI_Win_lock_all(0, win);
 			if(me > 0)
@@ -576,10 +571,6 @@ int main(int argc, char **argv){
 			MPI_Bcast(&flattenedEnergyArray[0], width*height, MPI_INT, 0, MPI_COMM_WORLD);
 		 
 		MPI_Barrier(MPI_COMM_WORLD);
-
-	       /*cout<< "Printing values after PE 0 does a broadcast" <<endl;
-                cout<<"Cell 1250 on PE: "<<me<<" has a value of: "<<flattenedEnergyArray[1250]<<endl;
-		cout<<"Cell 1900 on PE: "<<me<<" has a value of: "<<flattenedEnergyArray[1900]<<endl;	*/
 
 		identifySeams(width, height, start_col, stop_col, me, npes);
 		if (me == 0){
