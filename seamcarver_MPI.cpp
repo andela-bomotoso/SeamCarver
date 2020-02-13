@@ -319,29 +319,22 @@ void relax(int row, int col, int width, int start_col, int stop_col, int me, int
             int nextCell = nextRow*width + nextCol;
             if (nextCol < 0 || nextCol >= width)
                 continue;
-
 		if (flattenedDistTo[nextCell] >= flattenedDistTo[cell] + flattenedEnergyArray[nextCell]){
 			flattenedDistTo[nextCell] = flattenedDistTo[cell] + flattenedEnergyArray[nextCell];
 			flattenedEdgeTo[nextCell] = i;
-
                 /*Put the new values in PE 0, other PEs will fetch these values later*/
-                
 			MPI_Win_lock_all(0, win1);
-			if (me > 0){
+			if (me > 0)
                         	MPI_Put(&flattenedDistTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win1);
-			}
 			MPI_Win_flush_all(win1);
 		        MPI_Win_unlock_all(win1);		
 			
 			MPI_Win_lock_all(0, win2);
-			if (me > 0){
+			if (me > 0)
                         	MPI_Put(&flattenedEdgeTo[nextCell], 1, MPI_INT, 0, nextCell, 1, MPI_INT, win2);
-			}
 			MPI_Win_flush_all(win2);
 			MPI_Win_unlock_all(win2);
-			
                 }
-		
         }
     }
 
@@ -490,13 +483,10 @@ int main(int argc, char **argv){
 	height = pngwrt.getheight();
 
 	int cells_num = height*width;
-	//flattenedEnergyArray = initialize1DArray(height, width);
 	
 	// Allocate a window for each buffer
 	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedEnergyArray, &win); 
 	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedDistTo, &win1);
-	//flattenedDistTo = initializeDistTo1D(height, width);
-	
 	MPI_Win_allocate(cells_num*sizeof(int), sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &flattenedEdgeTo, &win2);
 
         if (me == 0)
