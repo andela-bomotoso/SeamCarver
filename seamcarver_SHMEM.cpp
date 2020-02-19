@@ -30,7 +30,8 @@ int* verticalSeams;
 int** distTo;
 int** edgeTo;
 static long pSync[SHMEM_BCAST_SYNC_SIZE];
-
+#include <iostream>
+#include <fstream>
 
 /*Copied from the liblqr example
  convert the image in the right format */
@@ -372,14 +373,16 @@ double timestamp()
 
 int main(int argc, char **argv){
 	//static long pSync[SHMEM_BCAST_SYNC_SIZE];
+	double total_begin = timestamp();
 	 for (int i = 0; i < SHMEM_BCAST_SYNC_SIZE; i++)
                 pSync[i] = SHMEM_SYNC_VALUE;
-
+         std::ofstream outfile;
+        outfile.open("timeanalysis.csv", std::ios_base::app);
 	shmem_init();
 	int me = shmem_my_pe();
 	int npes = shmem_n_pes();
 	
-	double total_begin = timestamp();
+	//double total_begin = timestamp();
 	
 	char * original_img = argv[1]; 
 	char* orientation = argv[2];
@@ -407,7 +410,8 @@ int main(int argc, char **argv){
 	LqrCarver *carved_seams;
 	//Check the orientation to determine how to carve
 	begin = timestamp();
-	if(orientation[0] == 'v'){
+	for (int i = 1; i <= 10; i++){
+		cout<<"Run "<<i<<endl;
 	
 		verticalSeams = new int[height];
 
@@ -431,15 +435,17 @@ int main(int argc, char **argv){
 		if (me < npes - 1)
 			stop_col_en = stop_col + 1;
 		//Fill the energy matrix with the energy values of each pixel
+		double sc_begin = timestamp();
 		generateEnergyMatrix(height, start_col_en, stop_col_en, npes, orientation);
 		shmem_barrier_all();
-
+		double sc_end = timestamp();
 		//Find the vertical seam in the image
 		identifySeams(width, height, start_col, stop_col, me, npes);
+		double si_end = 0;
 		 if (me  == 0){
-                        cout<<"Removing vertical seams"<<endl;
+                  //      cout<<"Removing vertical seams"<<endl;
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
-
+		si_end = timestamp();
 		/*PE 0 will remove the identified seams
 		  there is no need to parallelize this process*/
 			guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
@@ -447,54 +453,11 @@ int main(int argc, char **argv){
 			carved_seams = lqr_carver_new(seams, width, height, 3);
 
 			end = timestamp();
+			
 			cout<<"Total Seam Carving Time: "<<(end-begin)<<endl; 
 		}
-	}
-	else{
-		verticalSeams = new int[width];
-
-		//initialize  energy array	
-		energyArray = initializeEnergyArray(width, height);
+	
 		
-		/*divide the work among the available PEs*/
-		int col_per_pe = (height + npes - 1)/npes;
-		int start_col = me * col_per_pe;
-		int stop_col = (me + 1) * col_per_pe;
-		
-		/*Ensure the last PE does not exceed the last row*/
-		if (me == npes - 1)
-			stop_col = height;
-		 
-		/*consider adjacent pixels for energy computation*/  
-		int start_col_en = start_col;
-		int stop_col_en = stop_col;
-
-                if(me > 0 )  
-                      start_col_en = start_col - 1;
-               
-		if (me < npes - 1)
-                        stop_col_en = stop_col + 1;
-                
-		/*Fill the energy matrix with the energy values of each pixel  */                                                       generateEnergyMatrix(width, start_col_en, stop_col_en, npes, orientation);
-                shmem_barrier_all();
-			
-		/*Find the horizontal seams in the image*/
-		identifySeams(height, width, start_col, stop_col, me, npes);
-		 if (me == 0){
-                        cout<<"Removing horizontal seams"<<endl;
-
-		int* h_seams =  backTrack(edgeTo, distTo, width, height);
-		
-		/*Revome the identified horizontal seams*/
-			guchar* transBuffer = transposeRGBuffer(buffer, width, height);
-			guchar* carved_imageH = carveVertically(h_seams, transBuffer, height, width);
-			carver = lqr_carver_new(transposeRGBuffer(carved_imageH, height,width), width, height, 3);
-			carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
-		 
-		 end = timestamp();
-                 cout<<"Total Seam Carving Time: "<<(end-begin)<<endl;
-		}
-	}
 
 	//Create a Carver object with the carved image buffer
    	if (me == 0){
@@ -505,7 +468,9 @@ int main(int argc, char **argv){
 		pngwrt.close();
 
 		double total_end = timestamp();
+		outfile<<(sc_end-sc_begin)<<","<<(sc_end - si_end)<<","<<(si_end - end)<<","<<(end-begin)<<","<<total_end - total_begin<<endl;
 		printf("%s%5.2f\n","Total Processing Time: ", (total_end-total_begin));
+	}
 	}
 
 	shmem_finalize();

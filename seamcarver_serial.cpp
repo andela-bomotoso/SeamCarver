@@ -360,15 +360,15 @@ int main(int argc, char **argv){
 	//Check the orientation to determine how to carve
 	if(orientation[0] == 'v'){
 		
-		begin = timestamp();
+	
 	 	verticalSeams = new int[height];
 		distTo = new int*[height];
 		edgeTo = new int*[height];
 		//Declare a dynamic 2D array to hold the energy values for all pixels
 		energyArray = new int*[height];
 		for (int i = 0; i < height; i++)
-		energyArray[i] = new int[width];	
-	
+			energyArray[i] = new int[width];	
+		begin = timestamp();
 		generateEnergyMatrix(width, height, orientation);
 		
 		identifySeams(width, height);	

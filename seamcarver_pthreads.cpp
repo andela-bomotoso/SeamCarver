@@ -12,7 +12,9 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <thread>
-
+#include <iostream>
+#include <fstream>
+#include <string>
 using namespace std;
 pngwriter pngwrt(1,1,0,"out_pthreads.png");
 const int BASE_ENERGY = 1000;
@@ -34,6 +36,8 @@ struct ThreadData {
 	int num_cols;
 	int start_col;
 	int stop_col;
+	int start_row;
+	int stop_row;
 	int thread_id;
 	int thread_num;
 	char* orientation;
@@ -259,7 +263,7 @@ void *identifySeams(void *arguments){
 }
   
  //Carve out the seams from the image               
-/*void *carveSeams(void *arguments){
+void *carveSeams(void *arguments){
 	struct ThreadData *data = (struct ThreadData*)arguments;
 	int height = data -> num_rows;
 	int width = data -> num_cols;
@@ -267,7 +271,30 @@ void *identifySeams(void *arguments){
 	int start_row = data -> start_row;
 	int stop_col = data -> stop_col;
 	int stop_row = data -> stop_row;
-*/
+	//void carveSeams(int width, int height){
+        for (int row = start_row; row < stop_row; row++){
+                //Get the RGB value before the seam
+                for (int col = 0; col < verticalSeams[row]; col++){
+                        for (int color = 0; color < 3; color++){
+                                carved_imageV[(row * width + col) * 3 + color] = buffer[(row * width
+                                                + col) * 3 + color];
+                                seams[(row * width + col) * 3 + color] = buffer[(row * width + col) *
+                                        3 + color];
+                        }
+                }
+
+                //Get the RGB values after the seams
+                for (int col = verticalSeams[row]; col < width-1; col++) {
+                        for (int color = 0; color < 3; color++){
+                                carved_imageV[(row * width + col) * 3 + color] = buffer[(row * width
+                                                + col+1) * 3 + color];
+                                seams[(row * width + col+1) * 3 + color] = buffer[(row * width + col+
+                                                1) * 3 + color];
+                        }
+                }
+        }
+
+}
 void carveSeams(int width, int height){
 	for (int row = 0; row < height; row++){
 		//Get the RGB value before the seam
@@ -291,7 +318,6 @@ void carveSeams(int width, int height){
 		}
 	}
 
-	//return carved_imageV;
 }
 LqrRetVal printSeams(LqrCarver *carver, pngwriter *pngwrt){
 
@@ -365,7 +391,18 @@ int main(int argc, char **argv){
 	char * original_img = argv[1]; 
 	char* orientation = argv[2];
 	int num_threads = atoi(argv[3]);
+	//std::ofstream outputFile("timeanalysis.csv");
+	std::ofstream outfile;
+	outfile.open("timeanalysis.csv", std::ios_base::app);
+	// create a name for the file output
+	 //std::string filename = "timeanalysis.csv";
 
+	// create and open the .csv file
+	 //s.open(outputFile,filename);
+	         
+         // write the file headers
+           //outputFile << "EC Time" << "SI Time" << "SR Time" << "Total Time" <<std::endl;
+	                     
 	pngwrt.readfromfile(original_img);
 	width = pngwrt.getwidth();
 	height = pngwrt.getheight();
@@ -390,6 +427,8 @@ int main(int argc, char **argv){
 	//Check the orientation to determine how to carve
 	//Vertical Orientation
 	if(orientation[0] == 'v'){
+	for(int i = 1; i <= 10; i++){
+		cout<<"Run: "<<i<<endl;
 		begin = timestamp();
 		verticalSeams = new int[height];
 		distTo = new int*[height];
@@ -408,28 +447,34 @@ int main(int argc, char **argv){
 		struct ThreadData data[num_threads];
 
 		int col_per_thread = (width + num_threads - 1)/ num_threads;
+		int row_per_thread = (height + num_threads - 1)/num_threads;
 
 		for (int i = 0; i < num_threads; i++)	{
 			data[i].start_col = i*col_per_thread;
 			data[i].stop_col = (i + 1)*col_per_thread;
+			data[i].start_row = (i*row_per_thread);
+			data[i].stop_row = (i+1)*row_per_thread;
 			data[i].num_rows = height;
 			data[i].num_cols = width;
 			data[i].thread_id = i;
 			data[i].thread_num = num_threads;
 			data[i].orientation = orientation;
 		}
+
 		data[num_threads - 1].stop_col = width;
-               
+		data[num_threads - 1].stop_row = height;
+	      begin = timestamp();
+              //double beginEC =  timestamp();
 		for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
 		}
 		for (int i = 0;  i < num_threads; i++){
 			pthread_join(threads[i], NULL);
 		}
-		
+		double endEC = timestamp();
 	
-		cout<<"Removing vertical seams"<<endl;
-		begin = timestamp();
+		//cout<<"Removing vertical seams"<<endl;
+		double beginSI = timestamp();
 		for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &identifySeams, (void*)&data[i]);
 		}
@@ -438,88 +483,31 @@ int main(int argc, char **argv){
 		}
 			
 		verticalSeams =  backTrack(edgeTo, distTo, height, width);
-		carveSeams(width, height);
-		/*end = timestamp();
-		for (int i = 0; i < NUM_OF_THREADS; i++){
+		double endSI = timestamp();
+
+	//	carveSeams(width, height);
+		double beginSR = timestamp();
+		for (int i = 0; i < num_threads; i++){
 			pthread_create(&threads[i], NULL, &carveSeams, (void*)&data[i]);
 		}
 
-		for (int i = 0;  i < NUM_OF_THREADS; i++){
+		for (int i = 0;  i < num_threads; i++){
 			pthread_join(threads[i], NULL);
-		}*/
+		}
+		 end = timestamp();
 
 		carver = lqr_carver_new(carved_imageV, width, height, 3);
 		carved_seams = lqr_carver_new(seams, width, height, 3);
 		end = timestamp();
-		cout<<"Total SeamCarving Time: "<<(end - begin)<<endl;
+	//	cout<<"EC Time: "<<(endEC - begin)<<endl;
+	//	cout<<"SI Time: "<<(endSI - beginSI) <<endl;
+	//	cout<<"SR Time: "<<(end - beginSR)<<endl;
+		double total_time = end - begin;
+		//outputFile << (endEC - begin) << "," << (endSI-beginSI) << "," << (end-beginSR) << "," <<total_time<<endl;
+
+		//cout<<"Total SeamCarving Time: "<<(end - begin)<<endl;
 		
 	}
-	//Horizontal Seams
-	else{   
-		begin = timestamp();
-		verticalSeams = new int[width];
-		distTo = new int*[width];
-		edgeTo = new int*[width];
-
-		//Declare a dynamic 2D array to hold the energy values for all pixels
-		energyArray = new double*[width];
-
-		for (int i = 0; i < width; i++)
-                        distTo[i] = new int[height];
-                for (int i = 0; i < width; i++)
-                        edgeTo[i] = new int[height];
-
-		  pthread_t threads[num_threads];
-
-		  pthread_barrier_init(&mybarrier, NULL, num_threads );
-
-		struct ThreadData data[num_threads];
-		int col_per_thread = (height + num_threads - 1)/num_threads;
-		//Spawn up threads that will generate the energy matrix
-		for (int i = 0; i < num_threads;  i++){
-			data[i].start_col = i * col_per_thread;
-			data[i].stop_col = (i + 1)*col_per_thread;
-			data[i].num_rows = width;
-			data[i].num_cols = height;
-			data[i].thread_id = i;
-			data[i].thread_num = num_threads;
-			data[i].orientation = orientation;
-		}
-	
-	      	data[num_threads - 1].stop_col = height;
-
-		for (int i = 0; i < num_threads; i++){
-			pthread_create(&threads[i], NULL, &generateEnergyMatrix, (void*)&data[i]);
-		}
-	
-		for (int i = 0; i < num_threads; i++){
-			pthread_join(threads[i], NULL);
-		}
-
-		cout<<"Removing horizontal seams"<<endl;
-
-		for (int i = 0; i < num_threads; i++){
-                         pthread_create(&threads[i], NULL, &identifySeams, (void*)&data[i]);
-                 }
-                 for (int i = 0; i < num_threads; i++){
-                         pthread_join(threads[i], NULL);
-                 }
-		verticalSeams =  backTrack(edgeTo, distTo, width, height);
-
-		buffer = transposeRGBuffer(buffer, width, height);
-		carveSeams(height, width);
-		/*for (int i = 0; i < NUM_OF_THREADS; i++){
-			pthread_create(&threads[i], NULL, &carveSeams, (void*)&data[i]);
-		}
-
-		for (int i = 0;  i < NUM_OF_THREADS; i++){
-			pthread_join(threads[i], NULL);
-		}*/
-
-		carver = lqr_carver_new(transposeRGBuffer(carved_imageV, height,width), width, height, 3);
-		carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
-		end = timestamp();
-		cout<<"Total SeamCarving Time: "<<(end - begin)<<endl;
 	}
 
 	//Create a Carver object with the carved image buffer
@@ -529,6 +517,7 @@ int main(int argc, char **argv){
 	lqr_carver_destroy(carver);
 	pngwrt.close();
 	double total_end = timestamp();
+	outfile<<(total_end - total_begin)<<endl;
 	printf("%s%5.2f\n","Total Processing Time: ", (total_end-total_begin));
 	pthread_barrier_destroy(&mybarrier);
 
