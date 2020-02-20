@@ -373,6 +373,7 @@ double timestamp()
 
 int main(int argc, char **argv){
 	//static long pSync[SHMEM_BCAST_SYNC_SIZE];
+	double_si_end = 0;
 	double total_begin = timestamp();
 	 for (int i = 0; i < SHMEM_BCAST_SYNC_SIZE; i++)
                 pSync[i] = SHMEM_SYNC_VALUE;
@@ -394,8 +395,8 @@ int main(int argc, char **argv){
 	height = pngwrt.getheight();
 	
 
-        if (me == 1)
-		cout<<"Width: "<<width<<" Height: "<<height<<endl;
+        //if (me == 0)
+		//outfile<<"Width: "<<width<<" Height: "<<height<<" "<<npes<<endl;
 
 	double begin, end;
 
@@ -410,8 +411,8 @@ int main(int argc, char **argv){
 	LqrCarver *carved_seams;
 	//Check the orientation to determine how to carve
 	begin = timestamp();
-	for (int i = 1; i <= 10; i++){
-		cout<<"Run "<<i<<endl;
+	//for (int i = 1; i <= 10; i++){
+		//cout<<"Run "<<i<<endl;
 	
 		verticalSeams = new int[height];
 
@@ -441,11 +442,10 @@ int main(int argc, char **argv){
 		double sc_end = timestamp();
 		//Find the vertical seam in the image
 		identifySeams(width, height, start_col, stop_col, me, npes);
-		double si_end = 0;
 		 if (me  == 0){
                   //      cout<<"Removing vertical seams"<<endl;
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
-		si_end = timestamp();
+		 si_end = timestamp();
 		/*PE 0 will remove the identified seams
 		  there is no need to parallelize this process*/
 			guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
@@ -454,7 +454,7 @@ int main(int argc, char **argv){
 
 			end = timestamp();
 			
-			cout<<"Total Seam Carving Time: "<<(end-begin)<<endl; 
+		//	cout<<"Total Seam Carving Time: "<<(end-begin)<<endl; 
 		}
 	
 		
@@ -463,18 +463,17 @@ int main(int argc, char **argv){
    	if (me == 0){
 		TRAP(lqr_carver_init(carver, max_step, rigidity));
 	//write_carver_to_image(carver, &pngwrt, orientation);
-		printSeams(carved_seams, &pngwrt);
+	I	printSeams(carved_seams, &pngwrt);
 		lqr_carver_destroy(carver);
 		pngwrt.close();
 
 		double total_end = timestamp();
-		outfile<<(sc_end-sc_begin)<<","<<(sc_end - si_end)<<","<<(si_end - end)<<","<<(end-begin)<<","<<total_end - total_begin<<endl;
-		printf("%s%5.2f\n","Total Processing Time: ", (total_end-total_begin));
+		outfile<<(sc_end-sc_begin)<<","<<(si_end - sc_end)<<","<<(end - si_end)<<","<<(end-begin)<<","<<total_end - total_begin<<endl;
+		//printf("%s%5.2f\n","Total Processing Time: ", (total_end-total_begin));
 	}
-	}
+	
 
 	shmem_finalize();
 	return 0;
 	
-}
-
+}i
