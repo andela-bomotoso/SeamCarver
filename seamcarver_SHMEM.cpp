@@ -178,8 +178,6 @@ void generateEnergyMatrix(int num_rows, int start_col, int stop_col, int num_pes
                                  energyArray[row][column] = computeEnergy(column, row, buffer);
                         else
                                 energyArray[row][column] = computeEnergy(row, column, buffer);
-		//Put the new value in PE 0
-		shmem_int_put(&energyArray[row][column], &energyArray[row][column], 1, 0);
         }
     }
 }
@@ -198,10 +196,11 @@ void relax(int row, int col, int width, int start_col, int stop_col, int me, int
             if (distTo[nextRow][nextCol] >= distTo[row][col] + energyArray[nextRow][nextCol]) {
                 distTo[nextRow][nextCol] = distTo[row][col] + energyArray[nextRow][nextCol];
                 edgeTo[nextRow][nextCol] = i;
-
-		/*Put the new values in PE 0, it will be broadcast later*/
+ 		
+		/*Put the new values in PE 0, it will be used for seams removal*/
 		shmem_int_put(&distTo[nextRow][nextCol], &distTo[nextRow][nextCol], 1, 0);
 		shmem_int_put(&edgeTo[nextRow][nextCol], &edgeTo[nextRow][nextCol], 1, 0);
+		shmem_quiet();
             }
         }
     }
@@ -246,24 +245,15 @@ int * identifySeams( int width, int height, int start_col, int stop_col, int me,
 	distTo = initializeDistTo(height, width);
 	edgeTo = initializeEdgeTo(height, width);
 
-	//Initialize distTo to maximum values
+	 if (me > 0)
+                start_col++;
+            if (me < npes -1)
+                stop_col--;
 
 	 for (int row = 0; row < height - 1; row++) {
             for (int col = start_col; col < stop_col; col++) {
                 relax(row, col, width, start_col, stop_col, me, npes);
             }
-		//All PEs wait for one another
-		shmem_barrier_all();
-
-		/*PE 0 shares its new edges and distance values
-			so all PEs have up-to-date values*/
-		if (me == 0)	{
-			for (int pe = 1; pe < npes; pe++){
-				shmem_int_put(&distTo[row+1][0], &distTo[row+1][0], width, pe);
-				shmem_int_put(&edgeTo[row+1][0], &edgeTo[row+1][0], width, pe);
-			}
-		}
-		shmem_barrier_all();
         }
 }
 
@@ -371,7 +361,7 @@ double timestamp()
 }
 
 int main(int argc, char **argv){
-	//static long pSync[SHMEM_BCAST_SYNC_SIZE];
+	
 	 for (int i = 0; i < SHMEM_BCAST_SYNC_SIZE; i++)
                 pSync[i] = SHMEM_SYNC_VALUE;
 
@@ -425,17 +415,16 @@ int main(int argc, char **argv){
 		int start_col_en =  start_col;
 		int stop_col_en = stop_col;
 		
-		//consider adjacent pixels for energy computation
-		if(me > 0 )
-			start_col_en = start_col - 1;
-		if (me < npes - 1)
-			stop_col_en = stop_col + 1;
+		
+		  
 		//Fill the energy matrix with the energy values of each pixel
 		generateEnergyMatrix(height, start_col_en, stop_col_en, npes, orientation);
 		shmem_barrier_all();
 
 		//Find the vertical seam in the image
-		identifySeams(width, height, start_col, stop_col, me, npes);
+		identifySeams(width, height, start_col_en, stop_col_en, me, npes);
+		shmem_barrier_all();
+		
 		 if (me  == 0){
                         cout<<"Removing vertical seams"<<endl;
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
@@ -475,7 +464,8 @@ int main(int argc, char **argv){
 		if (me < npes - 1)
                         stop_col_en = stop_col + 1;
                 
-		/*Fill the energy matrix with the energy values of each pixel  */                                                       generateEnergyMatrix(width, start_col_en, stop_col_en, npes, orientation);
+		/*Fill the energy matrix with the energy values of each pixel  */ 
+                 generateEnergyMatrix(width, start_col_en, stop_col_en, npes, orientation);
                 shmem_barrier_all();
 			
 		/*Find the horizontal seams in the image*/
