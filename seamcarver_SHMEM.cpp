@@ -12,7 +12,8 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <shmem.h>
-
+#include <ios>
+#include <fstream>
 
 using namespace std;
 pngwriter pngwrt(1,1,0,"out_SHMEM.png");
@@ -30,7 +31,6 @@ int* verticalSeams;
 int** distTo;
 int** edgeTo;
 static long pSync[SHMEM_BCAST_SYNC_SIZE];
-
 
 /*Copied from the liblqr example
  convert the image in the right format */
@@ -364,27 +364,24 @@ int main(int argc, char **argv){
 	
 	 for (int i = 0; i < SHMEM_BCAST_SYNC_SIZE; i++)
                 pSync[i] = SHMEM_SYNC_VALUE;
-
+	
 	shmem_init();
 	int me = shmem_my_pe();
 	int npes = shmem_n_pes();
-	
-	double total_begin = timestamp();
+		double total_begin = timestamp();
 	
 	char * original_img = argv[1]; 
 	char* orientation = argv[2];
-	
+	char* filename = argv[3];
 	/*read the image and get the dimension*/
 
 	pngwrt.readfromfile(original_img);
 	width = pngwrt.getwidth();
 	height = pngwrt.getheight();
 	
-
-        if (me == 1)
-		cout<<"Width: "<<width<<" Height: "<<height<<endl;
-
-	double begin, end;
+	std::ofstream log(filename, std::ios_base::app);
+        //if (me == 1)
+	//	cout<<"Width: "<<width<<" Height: "<<height<<endl;
 
 	int size = 3 * width * height;
     	buffer = g_try_new(guchar,size);
@@ -396,7 +393,14 @@ int main(int argc, char **argv){
 	LqrCarver *carver;
 	LqrCarver *carved_seams;
 	//Check the orientation to determine how to carve
-	begin = timestamp();
+	
+	 double ec_b = 0;
+         double ec_e = 0;
+         double si_b = 0;
+         double si_e = 0;
+         double sr_b = 0;
+         double sr_e = 0;
+
 	if(orientation[0] == 'v'){
 	
 		verticalSeams = new int[height];
@@ -414,29 +418,28 @@ int main(int argc, char **argv){
 
 		int start_col_en =  start_col;
 		int stop_col_en = stop_col;
-		
-		
-		  
+		 
+		 
 		//Fill the energy matrix with the energy values of each pixel
+	
+		ec_b = timestamp();
 		generateEnergyMatrix(height, start_col_en, stop_col_en, npes, orientation);
+		ec_e = timestamp();
 		shmem_barrier_all();
-
+		
+		 si_b = timestamp();
 		//Find the vertical seam in the image
 		identifySeams(width, height, start_col_en, stop_col_en, me, npes);
 		shmem_barrier_all();
-		
-		 if (me  == 0){
-                        cout<<"Removing vertical seams"<<endl;
 		int* v_seams =  backTrack(edgeTo, distTo, height, width);
-
+		si_e = timestamp();
 		/*PE 0 will remove the identified seams
 		  there is no need to parallelize this process*/
+			if (me == 0){	
 			guchar* carved_imageV = carveVertically(v_seams,buffer, width, height);
 			carver = lqr_carver_new(carved_imageV, width, height, 3);
-			carved_seams = lqr_carver_new(seams, width, height, 3);
-
-			end = timestamp();
-			cout<<"Total Seam Carving Time: "<<(end-begin)<<endl; 
+			carved_seams = lqr_carver_new(seams, width, height, 3); 
+			sr_e = timestamp();
 		}
 	}
 	else{
@@ -481,8 +484,7 @@ int main(int argc, char **argv){
 			carver = lqr_carver_new(transposeRGBuffer(carved_imageH, height,width), width, height, 3);
 			carved_seams = lqr_carver_new(transposeRGBuffer(seams, height,width), width, height, 3);
 		 
-		 end = timestamp();
-                 cout<<"Total Seam Carving Time: "<<(end-begin)<<endl;
+                 //cout<<"Total Seam Carving Time: "<<(end-begin)<<endl;
 		}
 	}
 
@@ -493,9 +495,13 @@ int main(int argc, char **argv){
 		printSeams(carved_seams, &pngwrt);
 		lqr_carver_destroy(carver);
 		pngwrt.close();
-
+		
 		double total_end = timestamp();
-		printf("%s%5.2f\n","Total Processing Time: ", (total_end-total_begin));
+		if (me == 0)
+	//	cout<<(ec_e - ec_b)<<","<<(si_e - si_b)<<","<<(sr_e - si_e)<<","<<(total_end-total_begin)<<endl;
+		log<<(ec_e - ec_b)<<","<<(si_e - si_b)<<","<<(sr_e - si_e)<<","<<(total_end-total_begin)<<endl;
+
+		//printf("%s%5.2f\n","Total Processing Time: ", (total_end-total_begin));
 	}
 
 	shmem_finalize();
