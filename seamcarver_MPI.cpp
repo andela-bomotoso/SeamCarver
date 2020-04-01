@@ -239,8 +239,8 @@ int getCol(int cell, int num_cols){
 
 int* initializeDistTo1D(int rows, int columns){
         int* array1D = (int*)malloc(rows*columns*sizeof(int));
+	
          for ( int cell = 0; cell < rows*columns; cell++){
-               // int col = getCol(i, columns);
                 int row = getRow(cell, columns);
                 if (row == 0)
                         array1D[cell] = BASE_ENERGY;
@@ -259,11 +259,6 @@ void generateEnergyMatrix(int num_rows, int start_col, int stop_col, int me, int
                                  flattenedEnergyArray[cell] = computeEnergy(column, row, buffer);
                         else
                                 flattenedEnergyArray[cell] = computeEnergy(row, column, buffer);
-		
-	/*if (cell == 1900 || cell == 1250){
-		cout<< "Printing values inside the energy generation matrix" <<endl;
-        	cout<<"Cell "<<cell<< " processed by PE: "<<me<<" has a value of: "<<flattenedEnergyArray[cell]<<endl;
-	}*/
 
 		/*Put the new value in PE 0*/
 		MPI_Win_lock_all(0, win);
@@ -520,23 +515,29 @@ int main(int argc, char **argv){
 	LqrCarver *carved_seams;
 	//Check the orientation to determine how to carve
 	begin = timestamp();
-		
+         	
 	if(orientation[0] == 'v'){
 	
 		verticalSeams = new int[height];
 		
 		/*initialize energy 1D and 2D Array*/
 		energyArray = initializeEnergyArray(height, width);
-		flattenedEnergyArray = initialize1DArray(height, width);
-	
+			
 		/*initialize distTo 1D and 2D arrays*/
 		distTo = initializeDistTo(height, width);
-		flattenedDistTo = initializeDistTo1D(height, width);
+		
+		for ( int cell = 0; cell < cells_num; cell++){
+                	int row = getRow(cell, width);
+                	if (row == 0)
+                        	flattenedDistTo[cell] = BASE_ENERGY;
+                	else
+                        	flattenedDistTo[cell] = std::numeric_limits<int>::max();
+       		 }
          	
 		/*initialize edgeTo 1D and 2D arrays*/
 
 		edgeTo = initializeEdgeTo(height, width);
-		flattenedEdgeTo = initialize1DArray(height, width);
+		
 
 		/*Divide the work among the available PEs*/
 		int cell_per_pe = (width*height + npes - 1)/npes;
@@ -575,11 +576,6 @@ int main(int argc, char **argv){
  		if (npes > 1)
 			MPI_Bcast(&flattenedEnergyArray[0], width*height, MPI_INT, 0, MPI_COMM_WORLD);
 		 
-		MPI_Barrier(MPI_COMM_WORLD);
-
-	       /*cout<< "Printing values after PE 0 does a broadcast" <<endl;
-                cout<<"Cell 1250 on PE: "<<me<<" has a value of: "<<flattenedEnergyArray[1250]<<endl;
-		cout<<"Cell 1900 on PE: "<<me<<" has a value of: "<<flattenedEnergyArray[1900]<<endl;	*/
 
 		identifySeams(width, height, start_col, stop_col, me, npes);
 		if (me == 0){
