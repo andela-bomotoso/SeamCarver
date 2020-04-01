@@ -573,12 +573,9 @@ int main(int argc, char **argv){
 		MPI_Barrier(MPI_COMM_WORLD);
 
 		/* PE 0 broadcasts the values of the 1D energy Array*/ 
- 		if (npes > 1)
-			MPI_Bcast(&flattenedEnergyArray[0], width*height, MPI_INT, 0, MPI_COMM_WORLD);
-		 
-
+ 		
 		identifySeams(width, height, start_col, stop_col, me, npes);
-		 MPI_Barrier(MPI_COMM_WORLD);
+		MPI_Barrier(MPI_COMM_WORLD);
 		if (me == 0){
 			distTo = unflattenArray(flattenedDistTo, height, width);
 			edgeTo = unflattenArray(flattenedEdgeTo, height, width);
