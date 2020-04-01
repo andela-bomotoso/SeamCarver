@@ -578,6 +578,7 @@ int main(int argc, char **argv){
 		 
 
 		identifySeams(width, height, start_col, stop_col, me, npes);
+		 MPI_Barrier(MPI_COMM_WORLD);
 		if (me == 0){
 			distTo = unflattenArray(flattenedDistTo, height, width);
 			edgeTo = unflattenArray(flattenedEdgeTo, height, width);
