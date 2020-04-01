@@ -149,28 +149,6 @@ int** initializeEnergyArray(int rows, int columns){
 	return energyArray;
 }
 
-
-int* initialize1DArray(int rows, int columns){
-        int* array1D = (int*)malloc(rows*columns*sizeof(int));
-	 for ( int i = 0; i < rows*columns; i++)
-                array1D[i] = 0;
-        return array1D;
-}
-
-
-/*int* initializeDistTo1D(int rows, int columns){
-        int* array1D = (int*)malloc(rows*columns*sizeof(int));
-         for ( int i = 0; i < rows*columns; i++)
-		int col = getCol(i, columns);
-		int row = getRow(i, columns);
-		if (row == 0)
-                	array1D[i] = BASE_ENERGY;
-      		else 
-			array1D[i] = std::numeric_limits<int>::max();
-
-        return array1D;
-}*/
-
 int** initializeEdgeTo(int rows, int columns){
         int** edgeTo;
         edgeTo = (int**) malloc(rows*sizeof(int*));
