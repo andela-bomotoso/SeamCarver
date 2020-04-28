@@ -23,4 +23,5 @@ e.g ./seamcarver_serial burro.png v: will generate a vertical seam paths in out.
 
 * Dr. Ferrol Aderholdt
 * Dr. Suk Seo
+* Dr. Chrisila Pettey
 
