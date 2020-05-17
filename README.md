@@ -1,6 +1,6 @@
 # Parallelilizing Seam Carving Using OpenSHMEM
 
-We will parallelize Seam Carving with OpenSHMEM in this project
+We  parallelized Seam Carving with pthreads, MPI and OpenSHMEM in this project
 
 ## Getting Started
 
@@ -14,8 +14,9 @@ PNGwriter: Follow the installation instructions on the PGNwriter gitHub page htt
 
 ## Running the test
 Use the make file for the execution. 
-A sample run takes 2 arguments; the png file and the orientation. Use v for the vertical orientation and h for the horizontal orientation. The out.png file has the processed image with the seams path
+A sample run takes 2 arguments; the png file and the orientation. Use v for the vertical orientation and h for the horizontal orientation. The out.png file has the processed image with the seams path. 
 e.g ./seamcarver_serial burro.png v: will generate a vertical seam paths in out.png for the image burro.png
+    ./seamcarver_serial burro.png h: will generate a horizontal seam paths in out.png for the image burro.png
 
 
 
